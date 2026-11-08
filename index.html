@@ -12,7 +12,7 @@
 <link rel="canonical" href="https://cockpile.com/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=DM+Sans:wght@500;700&display=swap" rel="stylesheet">
-<script src="js/matter.min.js"></script>
+<script src="js/planck.min.js"></script>
 <style>
   :root{
     --bg1:#fff4e3; --bg2:#ffd9c2; --ink:#3a1f2b; --accent:#ff5a7a; --chip:#ffffffcc;
@@ -21,12 +21,17 @@
   html,body{height:100%;overflow:hidden;background:var(--bg1);font-family:"DM Sans",system-ui,sans-serif;color:var(--ink);
     -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
   body{background:radial-gradient(120% 90% at 50% 0%,var(--bg1) 0%,#ffe9d6 55%,var(--bg2) 100%)}
-  canvas{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;display:block;touch-action:none;cursor:grab}
+  #gallery{position:fixed;inset:0;z-index:0;overflow:hidden;background:var(--bg1)}
+  .slide{position:absolute;inset:0;opacity:0;transition:opacity 1.1s ease}
+  .slide.on{opacity:1}
+  .slide .bg,.slide .fg{position:absolute;inset:0;background-position:center;background-repeat:no-repeat}
+  .slide .bg{background-size:cover;filter:blur(36px) saturate(1.1) brightness(.95);transform:scale(1.25)}
+  .slide .fg{background-size:contain;transform-origin:center}
+  .slide.on .fg{animation:drift 4.6s linear forwards}
+  @keyframes drift{from{transform:scale(1) translateY(0)}to{transform:scale(1.06) translateY(-1%)}}
+  .veil{position:fixed;inset:0;z-index:0;background:linear-gradient(180deg,rgba(255,244,227,.12),rgba(255,233,214,.28))}
+  canvas{position:fixed;inset:0;z-index:1;width:100vw;height:100vh;height:100dvh;display:block;touch-action:none;cursor:grab}
   canvas.grabbing{cursor:grabbing}
-  .hud{position:fixed;left:16px;top:14px;pointer-events:none;z-index:2}
-  .hud h1{font-family:"Bagel Fat One",system-ui;font-weight:400;font-size:clamp(28px,5vw,48px);line-height:.9;letter-spacing:.5px;
-    color:var(--accent);text-shadow:3px 3px 0 var(--ink)}
-  .hud p{margin-top:6px;font-size:13px;font-weight:700;opacity:.65}
   .bar{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;z-index:2;max-width:calc(100vw - 24px)}
   .bar button,.bar label{font:700 13px "DM Sans",system-ui;color:var(--ink);background:var(--chip);border:2px solid var(--ink);
     border-radius:999px;padding:8px 14px;cursor:pointer;backdrop-filter:blur(6px);box-shadow:2px 2px 0 var(--ink);transition:transform .08s}
@@ -42,57 +47,99 @@
 </style>
 </head>
 <body>
+<div id="gallery"><div class="slide"><div class="bg"></div><div class="fg"></div></div><div class="slide"><div class="bg"></div><div class="fg"></div></div></div>
+<div class="veil"></div>
 <canvas id="c"></canvas>
-<div class="hud"><h1>The Pile</h1><p id="count">0 in the pile</p></div>
 <div class="bar">
   <button id="rain" class="hot">Make it rain</button>
-  <button id="faces">Faces: on</button>
   <button id="clear">Clear</button>
 </div>
 <div class="drop" id="drop">Drop your cut-outs</div>
 <div class="toast" id="toast"></div>
 
 <script>
-// ================================================================
-// YOUR CUT-OUTS
-// Put transparent PNG/WebP cut-outs in the images/ folder and list
-// them here. Any pose works: each one's physics shape is traced from
-// its own outline. Leave the list empty for the cartoon placeholders.
-// ================================================================
 const CUTOUTS = [
   "images/cockodile.webp",
   "images/donald-dick.webp",
   "images/kermit-the-cock.webp",
   "images/wolf-wang.webp",
-  "images/womb-raider.webp",
+  "images/iron-cock.webp",
+  "images/cocker-pillar.webp",
+  "images/cockacoka.webp",
+  "images/dick-vader.webp",
+  "images/penisaurus-rex.webp",
+];
+
+// Background gallery: shown one at a time, ~3 seconds each, in random order.
+const GALLERY_SECONDS = 3;
+const GALLERY = [
+  "images/gallery/beverly-hills-cock.jpg",
+  "images/gallery/cock-fight.jpg",
+  "images/gallery/cockacoka.jpg",
+  "images/gallery/cockanaught.jpg",
+  "images/gallery/cockapillar.jpg",
+  "images/gallery/cockasaurus.jpg",
+  "images/gallery/cockburster.jpg",
+  "images/gallery/cockfish.jpg",
+  "images/gallery/cocknan-the-ball-barian.jpg",
+  "images/gallery/cockness-monster.jpg",
+  "images/gallery/cockodile.jpg",
+  "images/gallery/cockzilla.jpg",
+  "images/gallery/count-cockula.jpg",
+  "images/gallery/dick-vader-colour.jpg",
+  "images/gallery/dickachu.jpg",
+  "images/gallery/dickvader.jpg",
+  "images/gallery/donald-dick.jpg",
+  "images/gallery/frankendick.jpg",
+  "images/gallery/ironcock.jpg",
+  "images/gallery/kermit-the-cock.jpg",
+  "images/gallery/lolli-cock.jpg",
+  "images/gallery/meme-face.jpg",
+  "images/gallery/my-little-penis.jpg",
+  "images/gallery/octo-cock.jpg",
+  "images/gallery/penisaurus-rex.jpg",
+  "images/gallery/robodick.jpg",
+  "images/gallery/wolf-wang.jpg",
+  "images/gallery/womb-raider.jpg",
 ];
 
 (() => {
-  const { Engine, Runner, Bodies, Body, Composite, Events, Mouse, MouseConstraint } = Matter;
+  const pl = planck, { Vec2, Circle, Box, RevoluteJoint, WeldJoint, MouseJoint } = pl;
+
+  // ================================================================
+  // FEEL — tweak these to change how the pile behaves
+  // ================================================================
+  const FEEL = {
+    floppiness: 2.2,   // Hz of the springy joints: lower = floppier (1 = limp noodle, 6 = stiff)
+    bounce: 0.35,      // spring damping: lower = more wobble after a knock
+    maxBend: 0.55,     // most any one joint can fold (radians, ~30°) so bends stay smooth
+    squirm: 1,         // how lively the occasional squirm is (0 = never squirm)
+    fallDrag: 1.4,     // air drag while falling: higher = slower, floatier fall
+    grabSize: 1.75,    // how much bigger a grabbed piece gets
+    throwSpeed: 900,   // fling faster than this (pixels/sec) and it flies off and disappears
+  };
 
   // ---------- canvas ----------
   const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
+  const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: true, antialias: true }) || null;
+  const ctx = gl ? null : canvas.getContext('2d');
   const DPR = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.setAttribute('data-pixel-ratio', DPR);
   let W = 0, H = 0;
+  const S = 50; // pixels per physics metre
+  const DEBUG = location.hash === '#debug';
 
-  // ---------- physics ----------
-  const engine = Engine.create({ positionIterations: 10, velocityIterations: 8 });
-  engine.gravity.y = 1;
-  const world = engine.world;
-  const runner = Runner.create();
-
-  let walls = [];
+  // ---------- world ----------
+  const world = new pl.World({ gravity: Vec2(0, 14) });
+  const ground = world.createBody();
+  let wallFixtures = [];
   function buildWalls() {
-    walls.forEach(w => Composite.remove(world, w));
-    const t = 400;
-    walls = [
-      Bodies.rectangle(W / 2, H + t / 2, W * 3, t, { isStatic: true, friction: 0.9, label: 'wall' }),
-      Bodies.rectangle(-t / 2, H / 2 - H, t, H * 4, { isStatic: true, friction: 0.3, label: 'wall' }),
-      Bodies.rectangle(W + t / 2, H / 2 - H, t, H * 4, { isStatic: true, friction: 0.3, label: 'wall' }),
+    wallFixtures.forEach(f => ground.destroyFixture(f));
+    const w = W / S, h = H / S, t = 4;
+    wallFixtures = [
+      ground.createFixture(new Box(w * 1.5, t, Vec2(w / 2, h + t), 0), { friction: 0.9 }),
+      ground.createFixture(new Box(t, h * 3, Vec2(-t, -h * 0.5), 0), { friction: 0.3 }),
+      ground.createFixture(new Box(t, h * 3, Vec2(w + t, -h * 0.5), 0), { friction: 0.3 }),
     ];
-    Composite.add(world, walls);
   }
 
   function resize() {
@@ -100,376 +147,333 @@ const CUTOUTS = [
     canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
     buildWalls();
     // pull anything outside back in
-    dicks.forEach(d => {
-      const p = d.body.position;
-      if (p.x < 0 || p.x > W || p.y > H) Body.setPosition(d.body, { x: Math.min(Math.max(p.x, 40), W - 40), y: Math.min(p.y, H - 80) });
-    });
+    for (const d of dicks) {
+      if (d.thrown) continue;
+      for (const st of d.strips) {
+        const p = st.body.getPosition();
+        if (p.x * S < 0 || p.x * S > W || p.y * S > H) {
+          st.body.setPosition(Vec2(Math.min(Math.max(p.x * S, 60), W - 60) / S, Math.min(p.y * S, H - 120) / S));
+          st.body.setAwake(true);
+        }
+      }
+    }
   }
 
-  // ---------- look ----------
-  const SKINS = [
-    { body: '#f6c4a3', tip: '#ee9c8f' }, { body: '#e8a77f', tip: '#d77f73' },
-    { body: '#c98a5e', tip: '#b8665c' }, { body: '#9a6143', tip: '#86463e' },
-    { body: '#6e4330', tip: '#5d3029' }, { body: '#ff9ec4', tip: '#ff6fa3' },
-    { body: '#9fd6ff', tip: '#6db8f2' }, { body: '#b9f0a6', tip: '#86d66d' },
-    { body: '#ffd86b', tip: '#f5b53d' }, { body: '#c7b2ff', tip: '#a084f5' },
-  ];
-  const INK = '#3a1f2b';
-  let showFaces = true;
-  const DEBUG = location.hash === '#debug';
-  const images = []; // dropped skins: { img, aspect }
-
-  // ---------- the shape ----------
-  // Local frame: origin between the balls, shaft points up (-y).
-  // s = overall size, L = shaft length factor.
-  function geometry(s, L) {
-    return {
-      rb: 0.30 * s, bx: 0.27 * s,          // balls
-      w: 0.40 * s, len: L * s,             // shaft
-      rh: 0.25 * s,                        // tip
-      // bounding box used for fitting images
-      box: { x: -0.57 * s, y: -(L * s + 0.25 * s), w: 1.14 * s, h: L * s + 0.55 * s },
-    };
-  }
-
+  // ---------- pieces ----------
+  const images = [];
   const dicks = [];
-  let nextId = 0;
+  let nextId = 1;
+  const baseSize = () => (W < 700 ? Math.max(30, W / 8.5) : Math.min(W, 1100) / 13);
 
-  function baseSize() { return W < 700 ? Math.max(30, W / 8.5) : Math.min(W, 1100) / 13; }
-
-  const MAT = { friction: 0.6, frictionStatic: 0.8, restitution: 0.15, density: 0.0016 };
+  function makeFixtures(st, k) {
+    for (let f = st.body.getFixtureList(); f; ) { const n = f.getNext(); st.body.destroyFixture(f); f = n; }
+    for (const c of st.circles) {
+      st.body.createFixture(new Circle(Vec2((c.x - st.com.x) * k / S, (c.y - st.com.y) * k / S), c.r * k / S), {
+        density: 1, friction: 0.75, restitution: 0.04,
+        filterGroupIndex: st.group, filterMaskBits: st.mask,
+      });
+    }
+  }
 
   function spawn(x, y, opts = {}) {
-    if (images.length) return spawnImage(x, y, opts);
-    const s = baseSize() * (0.7 + Math.random() * 0.6);
-    const L = 0.9 + Math.random() * 0.6;
-    const g = geometry(s, L);
-    const mat = MAT;
-    const parts = [
-      Bodies.circle(x - g.bx, y, g.rb, mat),
-      Bodies.circle(x + g.bx, y, g.rb, mat),
-      Bodies.rectangle(x, y - g.len / 2, g.w, g.len, { ...mat, chamfer: { radius: g.w * 0.45 } }),
-      Bodies.circle(x, y - g.len, g.rh, mat),
-    ];
-    const body = Body.create({ parts, frictionAir: 0.035, label: 'dick' });
-    const off = { x: body.position.x - x, y: body.position.y - y }; // COM in local frame
-    Body.setAngle(body, (Math.random() - 0.5) * Math.PI * 1.4);
-    Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.04);
-    Body.setVelocity(body, { x: (Math.random() - 0.5) * 1.5, y: opts.vy ?? 0.5 });
-    const d = {
-      id: nextId++, body, s, L, g, off,
-      skin: SKINS[Math.floor(Math.random() * SKINS.length)],
-      img: null,
-      scale: 1, target: 1,
-      jiggle: 0, jt: Math.random() * 10,
-      blink: Math.random() * 4, born: performance.now(),
-      held: false,
-    };
-    body.plugin.d = d;
-    dicks.push(d);
-    Composite.add(world, body);
-    return d;
-  }
-
-  // A cut-out: the body is a cluster of circles traced from the image's outline
-  function spawnImage(x, y, opts) {
     const sk = images[Math.floor(Math.random() * images.length)];
     const longest = baseSize() * 2.1 * (0.8 + Math.random() * 0.4);
     const k = longest / Math.max(sk.w, sk.h);
-    const parts = sk.circles.map(c => Bodies.circle(x + (c.x - sk.w / 2) * k, y + (c.y - sk.h / 2) * k, c.r * k, MAT));
-    const body = parts.length > 1 ? Body.create({ parts, frictionAir: 0.035, label: 'dick' })
-                                  : Body.set(parts[0], { frictionAir: 0.035, label: 'dick' }) || parts[0];
-    const off = { x: body.position.x - x, y: body.position.y - y };
-    Body.setAngle(body, (Math.random() - 0.5) * Math.PI * 1.4);
-    Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.04);
-    Body.setVelocity(body, { x: (Math.random() - 0.5) * 1.5, y: opts.vy ?? 0.5 });
-    const d = { id: nextId++, body, s: longest / 2, off, img: sk, k, scale: 1, target: 1, jiggle: 0, jt: Math.random() * 10, held: false };
-    body.plugin.d = d;
+    const cx = sk.w / 2, cy = sk.h / 2;
+    const ang = (Math.random() - 0.5) * Math.PI * 1.4, ca = Math.cos(ang), sa = Math.sin(ang);
+    const toWorld = p => { const dx = (p.x - cx) * k, dy = (p.y - cy) * k; return Vec2((x + dx * ca - dy * sa) / S, (y + dx * sa + dy * ca) / S); };
+    const group = -nextId; // parts of the same piece never collide with each other
+    const strips = sk.segs.map(seg => {
+      let ax = 0, ay = 0, aw = 0;
+      seg.circles.forEach(c => { const w = c.r * c.r; ax += c.x * w; ay += c.y * w; aw += w; });
+      const com = { x: ax / aw, y: ay / aw };
+      const body = world.createDynamicBody({ position: toWorld(com), angle: ang, linearDamping: FEEL.fallDrag, angularDamping: 0.6 });
+      const st = { body, com, circles: seg.circles, group, mask: 0xffff };
+      makeFixtures(st, k);
+      return st;
+    });
+    const joints = sk.joints.map((j, i) => {
+      const A = strips[i].body, B = strips[i + 1].body, anchor = toWorld(j.mid);
+      const hinge = world.createJoint(new RevoluteJoint({ referenceAngle: 0, enableLimit: true, lowerAngle: -FEEL.maxBend, upperAngle: FEEL.maxBend,
+        enableMotor: false, maxMotorTorque: 0 }, A, B, anchor));
+      const spring = world.createJoint(new WeldJoint({ referenceAngle: 0, frequencyHz: FEEL.floppiness, dampingRatio: FEEL.bounce }, A, B, anchor));
+      return { hinge, spring, mid: j.mid };
+    });
+    const v = Vec2((Math.random() - 0.5) * 1.5, (opts.vy ?? 0.5) * 3);
+    const spin = (Math.random() - 0.5) * 1.5;
+    strips.forEach(st => { st.body.setLinearVelocity(v); st.body.setAngularVelocity(spin); });
+    let mass = 0; strips.forEach(st => mass += st.body.getMass());
+    const d = { id: nextId++, mass, strips, joints, img: sk, k, k0: k, scale: 1, target: 1, held: false, thrown: false, wig: 0, phase: Math.random() * 6 };
+    strips.forEach(st => st.body.setUserData(d));
     dicks.push(d);
-    Composite.add(world, body);
     return d;
   }
 
-  // Trace an image's silhouette into a handful of circles (greedy largest-inscribed-circle cover)
-  function analyse(img) {
-    const N = 72, sc = N / Math.max(img.width, img.height);
-    const w = Math.max(2, Math.round(img.width * sc)), h = Math.max(2, Math.round(img.height * sc));
-    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-    const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0, w, h);
-    const px = cx.getImageData(0, 0, w, h).data;
-    const inside = new Uint8Array(w * h); let total = 0;
-    for (let i = 0; i < w * h; i++) if (px[i * 4 + 3] > 100) { inside[i] = 1; total++; }
-    // chamfer distance to the nearest transparent pixel
-    const dt = new Float32Array(w * h), D = 1, Dg = 1.414;
-    const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? 0 : dt[y * w + x];
-    for (let i = 0; i < w * h; i++) dt[i] = inside[i] ? 1e9 : 0;
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x; if (!inside[i]) continue;
-      dt[i] = Math.min(dt[i], at(x - 1, y) + D, at(x, y - 1) + D, at(x - 1, y - 1) + Dg, at(x + 1, y - 1) + Dg); }
-    for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) { const i = y * w + x; if (!inside[i]) continue;
-      dt[i] = Math.min(dt[i], at(x + 1, y) + D, at(x, y + 1) + D, at(x + 1, y + 1) + Dg, at(x - 1, y + 1) + Dg); }
-    const covered = new Uint8Array(w * h); let left = total; const circles = [];
-    while (circles.length < 14 && left / total > 0.06) {
-      let best = 0, bi = -1;
-      for (let i = 0; i < w * h; i++) if (inside[i] && !covered[i] && dt[i] > best) { best = dt[i]; bi = i; }
-      if (bi < 0 || best < 1.6) break;
-      const bx = bi % w + 0.5, by = (bi / w | 0) + 0.5, rr2 = (best * 1.2) ** 2;
-      circles.push({ x: bx / sc, y: by / sc, r: best / sc });
-      for (let y = Math.max(0, by - best * 1.2 | 0); y < Math.min(h, by + best * 1.2 + 1); y++)
-        for (let x = Math.max(0, bx - best * 1.2 | 0); x < Math.min(w, bx + best * 1.2 + 1); x++) {
-          const i = y * w + x; if (inside[i] && !covered[i] && (x + .5 - bx) ** 2 + (y + .5 - by) ** 2 <= rr2) { covered[i] = 1; left--; }
-        }
-    }
-    if (!circles.length) circles.push({ x: img.width / 2, y: img.height / 2, r: Math.min(img.width, img.height) / 2 });
-    return { img, w: img.width, h: img.height, circles };
+  function removeDick(d) {
+    d.joints.forEach(j => { world.destroyJoint(j.hinge); world.destroyJoint(j.spring); });
+    d.strips.forEach(st => world.destroyBody(st.body));
+    dicks.splice(dicks.indexOf(d), 1);
+    if (held === d) release();
   }
 
-  function removeDick(d) {
-    Composite.remove(world, d.body);
-    dicks.splice(dicks.indexOf(d), 1);
+  // grow/shrink a whole piece about a point (fixtures and joints rebuilt at the new size)
+  function scalePiece(d, f, about) {
+    const c = about || d.strips[d.strips.length >> 1].body.getPosition();
+    d.k *= f;
+    for (const st of d.strips) {
+      const p = st.body.getPosition();
+      st.body.setPosition(Vec2(c.x + (p.x - c.x) * f, c.y + (p.y - c.y) * f));
+      makeFixtures(st, d.k);
+    }
+    d.joints.forEach((j, i) => {
+      world.destroyJoint(j.hinge); world.destroyJoint(j.spring);
+      const A = d.strips[i].body, B = d.strips[i + 1].body;
+      // the joint sits where the two slices meet: take it from slice A's frame
+      const ap = A.getWorldPoint(Vec2((j.mid.x - d.strips[i].com.x) * d.k / S, (j.mid.y - d.strips[i].com.y) * d.k / S));
+      j.hinge = world.createJoint(new RevoluteJoint({ referenceAngle: 0, enableLimit: true, lowerAngle: -FEEL.maxBend, upperAngle: FEEL.maxBend }, A, B, ap));
+      j.spring = world.createJoint(new WeldJoint({ referenceAngle: 0, frequencyHz: FEEL.floppiness, dampingRatio: FEEL.bounce }, A, B, ap));
+    });
+    d.strips.forEach(st => st.body.setAwake(true));
+  }
+
+  function setMask(d, mask) {
+    for (const st of d.strips) { st.mask = mask; for (let f = st.body.getFixtureList(); f; f = f.getNext()) f.setFilterData({ groupIndex: st.group, categoryBits: 1, maskBits: mask }); }
   }
 
   // ---------- spawning over time ----------
   function capacity() {
-    const avgArea = 1.14 * 1.75 * baseSize() ** 2; // rough footprint
-    return Math.round(Math.max(25, Math.min(240, (W * H * 0.65) / avgArea)));
+    const avgArea = 1.14 * 1.75 * baseSize() ** 2;
+    return Math.round(Math.max(25, Math.min(200, (W * H * 0.65) / avgArea)));
   }
   const t0 = performance.now();
   let spawnTimer = 0;
-  function spawnInterval() {
-    // starts gentle, speeds up the longer the page is open
-    const mins = (performance.now() - t0) / 60000;
-    return Math.max(350, 1700 - mins * 450);
-  }
+  const spawnInterval = () => Math.max(350, 1700 - (performance.now() - t0) / 60000 * 450);
   function dropOne(vy) {
-    const margin = baseSize();
-    spawn(margin + Math.random() * (W - margin * 2), -baseSize() * 2.2, { vy });
+    const m = baseSize();
+    spawn(m + Math.random() * (W - m * 2), -baseSize() * 2.4, { vy });
   }
 
-  // ---------- grabbing ----------
-  const mouse = Mouse.create(canvas);
-  mouse.pixelRatio = DPR;
-  // Matter's mouse swallows wheel events; we don't need them
-  mouse.element.removeEventListener('mousewheel', mouse.mousewheel);
-  mouse.element.removeEventListener('DOMMouseScroll', mouse.mousewheel);
-  const mc = MouseConstraint.create(engine, {
-    mouse, constraint: { stiffness: 0.18, damping: 0.1, render: { visible: false } },
-  });
-  Composite.add(world, mc);
-  let held = null;
-  Events.on(mc, 'startdrag', e => {
-    const d = e.body && e.body.plugin && e.body.plugin.d;
-    if (!d) { mc.constraint.bodyB = null; return; }
-    held = d; d.held = true; d.target = 1.75; d.jiggle = 1;
+  // ---------- grabbing & throwing ----------
+  let held = null, mouseJoint = null, grabStrip = null;
+  const pointer = { x: 0, y: 0, hist: [] };
+  function pick(px, py) {
+    const p = Vec2(px / S, py / S); let hit = null;
+    world.queryAABB(new pl.AABB(Vec2(p.x - 0.01, p.y - 0.01), Vec2(p.x + 0.01, p.y + 0.01)), f => {
+      const b = f.getBody(); if (b.isDynamic() && f.testPoint(p) && b.getUserData() && !b.getUserData().thrown) { hit = b; return false; } return true;
+    });
+    if (hit) return hit;
+    // forgiving touch: nearest piece within a finger's width
+    let best = null, bd = (W < 700 ? 30 : 16) / S;
+    for (const d of dicks) if (!d.thrown) for (const st of d.strips) for (let f = st.body.getFixtureList(); f; f = f.getNext()) {
+      const sh = f.getShape(), c = st.body.getWorldPoint(sh.getCenter()), dist = Math.hypot(c.x - p.x, c.y - p.y) - sh.getRadius();
+      if (dist < bd) { bd = dist; best = st.body; }
+    }
+    return best;
+  }
+  canvas.addEventListener('pointerdown', e => {
+    pointer.x = e.clientX; pointer.y = e.clientY; pointer.hist = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
+    const b = pick(e.clientX, e.clientY); if (!b) return;
+    const d = b.getUserData();
+    canvas.setPointerCapture(e.pointerId);
+    held = d; grabStrip = b; d.held = true; d.target = FEEL.grabSize; d.wig = 0;
+    d.strips.forEach(st => st.body.setAwake(true));
+    let mass = 0; d.strips.forEach(st => mass += st.body.getMass());
+    mouseJoint = world.createJoint(new MouseJoint({ maxForce: 600 * mass, frequencyHz: 6, dampingRatio: 0.8 }, ground, b, Vec2(e.clientX / S, e.clientY / S)));
     canvas.classList.add('grabbing');
   });
-  Events.on(mc, 'enddrag', () => {
-    if (held) { held.held = false; held.target = 1; held.jiggle = 0.8; }
-    held = null; canvas.classList.remove('grabbing');
+  canvas.addEventListener('pointermove', e => {
+    pointer.x = e.clientX; pointer.y = e.clientY;
+    pointer.hist.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+    if (pointer.hist.length > 8) pointer.hist.shift();
+    if (mouseJoint) mouseJoint.setTarget(Vec2(e.clientX / S, e.clientY / S));
   });
+  function release() {
+    if (mouseJoint) { world.destroyJoint(mouseJoint); mouseJoint = null; }
+    if (held) { held.held = false; held.target = 1; }
+    held = null; grabStrip = null; canvas.classList.remove('grabbing');
+  }
+  function endDrag() {
+    if (!held) return;
+    // fling speed: from the last bit of pointer movement, or how fast the grabbed piece itself is moving
+    const h = pointer.hist, now = performance.now();
+    let vx = 0, vy = 0;
+    if (h.length >= 2 && now - h[h.length - 1].t < 300) {
+      const b = h[h.length - 1]; let a = h[h.length - 2];
+      for (let i = h.length - 2; i >= 0 && b.t - h[i].t < 150; i--) a = h[i];
+      const dt = Math.max(16, b.t - a.t) / 1000; vx = (b.x - a.x) / dt; vy = (b.y - a.y) / dt;
+    }
+    if (grabStrip) { const bv = grabStrip.getLinearVelocity(); if (Math.hypot(bv.x, bv.y) * S > Math.hypot(vx, vy)) { vx = bv.x * S; vy = bv.y * S; } }
+    const d = held;
+    release();
+    if (Math.hypot(vx, vy) > FEEL.throwSpeed) {
+      d.thrown = true; d.target = 1;
+      setMask(d, 0); // flies through everything
+      d.strips.forEach(st => { st.body.setLinearDamping(0); st.body.setLinearVelocity(Vec2(vx * 1.4 / S, vy * 1.4 / S)); st.body.setAngularVelocity((Math.random() - 0.5) * 8); });
+    }
+  }
+  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointercancel', endDrag);
 
   // ---------- per-step logic ----------
-  Events.on(engine, 'beforeUpdate', () => {
+  function stepLogic(dt) {
+    const t = performance.now() / 1000;
     for (const d of dicks) {
-      // smooth grow / shrink (this physically shoves neighbours away)
-      if (Math.abs(d.target - d.scale) > 0.002) {
-        const next = d.scale + (d.target - d.scale) * 0.16;
-        Body.scale(d.body, next / d.scale, next / d.scale);
+      // smooth grow / shrink (really grows, so it shoves neighbours away)
+      if (Math.abs(d.target - d.scale) > 0.004) {
+        const next = d.scale + (d.target - d.scale) * 0.18;
+        scalePiece(d, next / d.scale, grabStrip && d.held ? grabStrip.getPosition() : null);
         d.scale = next;
       }
-      // held one turns to face the camera (upright)
-      if (d.held) {
-        let a = d.body.angle % (Math.PI * 2);
-        if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2;
-        Body.setAngularVelocity(d.body, d.body.angularVelocity * 0.85 - a * 0.025);
+      // landed pieces lose their floaty fall drag so they slump naturally
+      const mid = d.strips[d.strips.length >> 1].body;
+      const fast = mid.getLinearVelocity().length() * S > 250;
+      if (!d.thrown) d.strips.forEach(st => st.body.setLinearDamping(fast && !d.held ? FEEL.fallDrag : 0.15));
+      // squirm: joint motors run a wave down the body now and then
+      if (FEEL.squirm > 0 && !d.held && !d.thrown) {
+        if (d.wig > 0) {
+          d.wig -= dt;
+          d.joints.forEach((j, i) => {
+            j.hinge.enableMotor(true);
+            j.hinge.setMaxMotorTorque(d.mass * 6 * FEEL.squirm * d.scale * d.scale);
+            j.hinge.setMotorSpeed(Math.sin(t * 7 + i * 1.3 + d.phase) * 3.2 * FEEL.squirm);
+          });
+          if (d.wig <= 0) d.joints.forEach(j => j.hinge.enableMotor(false));
+          d.strips.forEach(st => st.body.setAwake(true));
+        } else if (Math.random() < dt / 7) d.wig = 0.7 + Math.random() * 1.1;
       }
     }
-  });
-
-  Events.on(engine, 'collisionStart', e => {
-    for (const p of e.pairs) {
-      const A = p.bodyA.parent, B = p.bodyB.parent;
-      const va = A.velocity, vb = B.velocity;
-      const speed = Math.hypot(va.x - vb.x, va.y - vb.y);
-      if (speed < 1.2) continue;
-      const j = Math.min(1, speed / 7);
-      if (A.plugin.d) A.plugin.d.jiggle = Math.max(A.plugin.d.jiggle, j);
-      if (B.plugin.d) B.plugin.d.jiggle = Math.max(B.plugin.d.jiggle, j);
-    }
-  });
+  }
 
   // ---------- drawing ----------
-  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
-  function circ(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); }
-
-  // all shapes grown by `e` — used for the outline pass then the fill pass
-  function silhouette(g, e, bend, fill) {
-    ctx.fillStyle = fill;
-    circ(-g.bx, 0, g.rb + e); ctx.fill();
-    circ(g.bx, 0, g.rb + e); ctx.fill();
-    // shaft as a slightly bendy quad so the wobble looks rubbery
-    const hw = g.w / 2 + e, top = -g.len;
-    ctx.beginPath();
-    ctx.moveTo(-hw, 0);
-    ctx.quadraticCurveTo(-hw + bend * 0.5, top / 2, -hw + bend, top);
-    ctx.lineTo(hw + bend, top);
-    ctx.quadraticCurveTo(hw + bend * 0.5, top / 2, hw, 0);
-    ctx.closePath(); ctx.fill();
+  // ---------- drawing ----------
+  // WebGL: each piece is a strip of triangles over its image, bent smoothly by the slices' positions
+  let prog, buf, uRes, uOff, uShadow, aPos, aUV;
+  if (gl) {
+    const sh = (type, src) => { const o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o); return o; };
+    prog = gl.createProgram();
+    gl.attachShader(prog, sh(gl.VERTEX_SHADER, `attribute vec2 aPos; attribute vec2 aUV; uniform vec2 uRes; uniform vec2 uOff; varying vec2 vUV;
+      void main(){ vec2 p = (aPos + uOff) / uRes * 2.0 - 1.0; gl_Position = vec4(p.x, -p.y, 0.0, 1.0); vUV = aUV; }`));
+    gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `precision mediump float; uniform sampler2D uTex; uniform float uShadow; varying vec2 vUV;
+      void main(){ vec4 c = texture2D(uTex, vUV); gl_FragColor = uShadow > 0.0 ? vec4(0.0, 0.0, 0.0, c.a * uShadow) : c; }`));
+    gl.linkProgram(prog); gl.useProgram(prog);
+    buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    aPos = gl.getAttribLocation(prog, 'aPos'); aUV = gl.getAttribLocation(prog, 'aUV');
+    gl.enableVertexAttribArray(aPos); gl.enableVertexAttribArray(aUV);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 16, 0); gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 16, 8);
+    uRes = gl.getUniformLocation(prog, 'uRes'); uOff = gl.getUniformLocation(prog, 'uOff'); uShadow = gl.getUniformLocation(prog, 'uShadow');
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
-
-  function drawVector(d, t) {
-    const g = d.g, s = d.s;
-    const bend = Math.sin(d.jt * 11) * d.jiggle * s * 0.18;
-    const lw = s * 0.055;
-    // outline
-    silhouette(g, lw, bend, INK);
-    circ(bend, -g.len, g.rh + lw); ctx.fillStyle = INK; ctx.fill();
-    // fill
-    silhouette(g, 0, bend, d.skin.body);
-    circ(bend, -g.len, g.rh); ctx.fillStyle = d.skin.tip; ctx.fill();
-    // ball crease + highlights
-    ctx.strokeStyle = INK; ctx.lineWidth = lw * 0.6; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(0, g.rb * 0.15); ctx.lineTo(0, g.rb * 0.8); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,.35)';
-    circ(-g.bx - g.rb * 0.35, -g.rb * 0.35, g.rb * 0.22); ctx.fill();
-    circ(bend - g.rh * 0.35, -g.len - g.rh * 0.4, g.rh * 0.25); ctx.fill();
-    // tip slit
-    ctx.beginPath(); ctx.moveTo(bend, -g.len - g.rh * 0.85); ctx.lineTo(bend, -g.len - g.rh * 0.45); ctx.stroke();
-
-    if (!showFaces) return;
-    // face on the upper shaft
-    const fy = -g.len * 0.62, fx = bend * 0.62;
-    const er = g.w * 0.17, ex = g.w * 0.2;
-    d.blink -= 1 / 60;
-    const blinking = d.blink < 0.12;
-    if (d.blink < 0) d.blink = 2 + Math.random() * 4;
-    const surprised = d.held;
-    // eyes look at the cursor
-    const inv = toLocal(d, mouse.position);
-    const look = Math.atan2(inv.y - fy, inv.x - fx);
-    for (const sx of [-1, 1]) {
-      const cx = fx + sx * ex, r = surprised ? er * 1.25 : er;
-      if (blinking && !surprised) {
-        ctx.beginPath(); ctx.moveTo(cx - r, fy); ctx.lineTo(cx + r, fy); ctx.stroke();
-      } else {
-        circ(cx, fy, r); ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke();
-        circ(cx + Math.cos(look) * r * 0.4, fy + Math.sin(look) * r * 0.4, r * 0.5); ctx.fillStyle = INK; ctx.fill();
-      }
+  function makeTexture(img) {
+    if (!gl) return null;
+    // power-of-two copy so it can be mipmapped (crisp when shrunk)
+    const n = Math.min(1024, 1 << Math.ceil(Math.log2(Math.max(img.width, img.height, 2))));
+    const cv = document.createElement('canvas'); cv.width = cv.height = n;
+    cv.getContext('2d').drawImage(img, 0, 0, n, n);
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  let verts = new Float32Array(1024);
+  function drawPieceGL(d, shadow) {
+    const sk = d.img, m = sk.mesh, n = m.length;
+    if (verts.length < n * 4) verts = new Float32Array(n * 4);
+    const T = d.strips.map(st => { const p = st.body.getPosition(), a = st.body.getAngle(); return { x: p.x * S, y: p.y * S, c: Math.cos(a) * d.k, s: Math.sin(a) * d.k, cx: st.com.x, cy: st.com.y }; });
+    for (let i = 0; i < n; i++) {
+      const v = m[i], A = T[v.a], Bt = T[v.b];
+      const ax = v.x - A.cx, ay = v.y - A.cy, bx = v.x - Bt.cx, by = v.y - Bt.cy;
+      const wx = A.x + ax * A.c - ay * A.s, wy = A.y + ax * A.s + ay * A.c;
+      const zx = Bt.x + bx * Bt.c - by * Bt.s, zy = Bt.y + bx * Bt.s + by * Bt.c;
+      verts[i * 4] = wx + (zx - wx) * v.wb; verts[i * 4 + 1] = wy + (zy - wy) * v.wb;
+      verts[i * 4 + 2] = v.x / sk.w; verts[i * 4 + 3] = v.y / sk.h;
     }
-    // cheeks
-    ctx.fillStyle = 'rgba(255,80,110,.28)';
-    circ(fx - ex * 1.9, fy + er * 1.6, er * 0.8); ctx.fill();
-    circ(fx + ex * 1.9, fy + er * 1.6, er * 0.8); ctx.fill();
-    // mouth
-    ctx.beginPath();
-    if (surprised) { circ(fx, fy + er * 2.4, er * 0.65); ctx.fillStyle = INK; ctx.fill(); }
-    else { ctx.arc(fx, fy + er * 1.4, er * 0.9, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); }
+    gl.bindTexture(gl.TEXTURE_2D, sk.tex);
+    gl.bufferData(gl.ARRAY_BUFFER, verts.subarray(0, n * 4), gl.DYNAMIC_DRAW);
+    if (shadow) { gl.uniform1f(uShadow, 0.32); gl.uniform2f(uOff, 6, 18); gl.drawArrays(gl.TRIANGLE_STRIP, 0, n); }
+    gl.uniform1f(uShadow, 0); gl.uniform2f(uOff, 0, 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, n);
   }
-
-  function drawImage(d) {
-    const sk = d.img, k = d.k;
-    ctx.drawImage(sk.img, -sk.w / 2 * k, -sk.h / 2 * k, sk.w * k, sk.h * k);
-  }
-
-  // world point -> this body's unscaled local frame
-  function toLocal(d, p) {
-    const b = d.body, dx = p.x - b.position.x, dy = p.y - b.position.y;
-    const c = Math.cos(-b.angle), sn = Math.sin(-b.angle);
-    return { x: (dx * c - dy * sn) / d.scale + d.off.x, y: (dx * sn + dy * c) / d.scale + d.off.y };
-  }
-
-  function drawDick(d, t) {
-    const b = d.body;
-    d.jt += 1 / 60;
-    d.jiggle *= 0.94;
-    const sq = Math.sin(d.jt * 18) * d.jiggle * 0.08;
-    ctx.save();
-    ctx.translate(b.position.x, b.position.y);
-    ctx.rotate(b.angle);
-    ctx.scale(d.scale * (1 + sq), d.scale * (1 - sq));
-    ctx.translate(-d.off.x, -d.off.y);
-    const shadow = () => { ctx.shadowColor = 'rgba(58,31,43,.35)'; ctx.shadowBlur = 30 * d.scale; ctx.shadowOffsetY = 18; };
-    if (d.img) { if (d.held) shadow(); drawImage(d); }
-    else {
-      if (d.held) { // shadow pass first, so it doesn't smudge the outlines
-        ctx.save(); shadow();
-        silhouette(d.g, d.s * 0.055, 0, INK); circ(0, -d.g.len, d.g.rh + d.s * 0.055); ctx.fill();
-        ctx.restore();
-      }
-      drawVector(d, t);
+  // 2D fallback: pre-cut slices
+  function drawPiece2D(d) {
+    for (let i = 0; i < d.strips.length; i++) {
+      const st = d.strips[i], p = st.body.getPosition(), sg = d.img.segs[i], a = st.body.getAngle();
+      const kc = DPR * d.k * Math.cos(a), ks = DPR * d.k * Math.sin(a);
+      ctx.setTransform(kc, ks, -ks, kc, DPR * p.x * S, DPR * p.y * S);
+      ctx.drawImage(sg.sprite, sg.sx - st.com.x, sg.sy - st.com.y);
     }
-    ctx.restore();
-  }
-
-  function frame(t) {
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    ctx.clearRect(0, 0, W, H);
+  }
+  // debug overlay (only with #debug)
+  let dbg = null;
+  if (DEBUG) { const dc = document.createElement('canvas'); dc.style.cssText = 'position:fixed;inset:0;z-index:1;pointer-events:none;width:100vw;height:100vh'; document.body.appendChild(dc); dbg = dc.getContext('2d'); }
 
-    // floor shadow
-    const grd = ctx.createLinearGradient(0, H - 40, 0, H);
-    grd.addColorStop(0, 'rgba(58,31,43,0)'); grd.addColorStop(1, 'rgba(58,31,43,.12)');
-    ctx.fillStyle = grd; ctx.fillRect(0, H - 40, W, 40);
+  let last = performance.now(), acc = 0;
+  const STEP = 1 / 60;
+  function frame(now) {
+    acc += Math.min(0.1, (now - last) / 1000); last = now;
+    let steps = 0;
+    while (acc >= STEP && steps < 4) { stepLogic(STEP); world.step(STEP, 6, 3); acc -= STEP; steps++; }
+    if (steps === 4) acc = 0;
 
-    // spawn
+    if (gl) { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.uniform2f(uRes, W, H); }
+    else { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H); }
+
     spawnTimer += 16.7;
-    if (spawnTimer > spawnInterval() && dicks.length < capacity() && !document.hidden) {
-      spawnTimer = 0; dropOne();
-    }
+    if (spawnTimer > spawnInterval() && dicks.length < capacity() && !document.hidden) { spawnTimer = 0; dropOne(); }
 
-    // tidy anything lost off-screen
     for (let i = dicks.length - 1; i >= 0; i--) {
-      if (dicks[i].body.position.y > H + 600) removeDick(dicks[i]);
+      const d = dicks[i], p = d.strips[0].body.getPosition();
+      const x = p.x * S, y = p.y * S;
+      if (y > H + 600 || (d.thrown && (x < -500 || x > W + 500 || y > H + 400 || y < -2500))) removeDick(d);
     }
 
-    // draw: held one last so it sits "closest to camera"
-    for (const d of dicks) if (!d.held) drawDick(d, t);
-    if (held) drawDick(held, t);
-    if (DEBUG) { // add #debug to the address to see the physics shapes
-      ctx.strokeStyle = 'rgba(0,160,255,.9)'; ctx.lineWidth = 1.5;
-      for (const d of dicks) for (const p of d.body.parts) {
-        if (p === d.body && d.body.parts.length > 1) continue;
-        if (p.circleRadius) { circ(p.position.x, p.position.y, p.circleRadius); ctx.stroke(); }
-        else { ctx.beginPath(); p.vertices.forEach((v, i) => i ? ctx.lineTo(v.x, v.y) : ctx.moveTo(v.x, v.y)); ctx.closePath(); ctx.stroke(); }
+    for (const d of dicks) if (!d.held) gl ? drawPieceGL(d, false) : drawPiece2D(d);
+    if (held) gl ? drawPieceGL(held, true) : drawPiece2D(held);
+
+    if (dbg) {
+      if (dbg.canvas.width !== canvas.width) { dbg.canvas.width = canvas.width; dbg.canvas.height = canvas.height; }
+      dbg.setTransform(DPR, 0, 0, DPR, 0, 0); dbg.clearRect(0, 0, W, H); dbg.lineWidth = 1.5;
+      for (const d of dicks) for (const st of d.strips) {
+        dbg.strokeStyle = st.body.isAwake() ? 'rgba(0,160,255,.9)' : 'rgba(150,150,150,.8)';
+        for (let f = st.body.getFixtureList(); f; f = f.getNext()) {
+          const sh = f.getShape(), c = st.body.getWorldPoint(sh.getCenter());
+          dbg.beginPath(); dbg.arc(c.x * S, c.y * S, sh.getRadius() * S, 0, Math.PI * 2); dbg.stroke();
+        }
       }
     }
-
-    countEl.textContent = `${dicks.length} in the pile` + (dicks.length >= capacity() ? ' · it’s full' : '');
     requestAnimationFrame(frame);
   }
 
   // ---------- UI ----------
-  const countEl = document.getElementById('count');
   const toastEl = document.getElementById('toast');
   let toastT;
   function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('on'), 2200); }
-
   document.getElementById('rain').onclick = () => {
-    const room = Math.max(0, Math.round(capacity() * 1.3) - dicks.length);
-    const n = Math.min(15, room);
+    const room = Math.max(0, Math.round(capacity() * 1.3) - dicks.length), n = Math.min(15, room);
     if (!n) return toast('The pile can’t take any more');
     for (let i = 0; i < n; i++) setTimeout(() => dropOne(2), i * 90);
   };
-  document.getElementById('clear').onclick = () => { [...dicks].forEach(removeDick); held = null; };
-  const facesBtn = document.getElementById('faces');
-  facesBtn.onclick = () => { showFaces = !showFaces; facesBtn.textContent = 'Faces: ' + (showFaces ? 'on' : 'off'); };
+  document.getElementById('clear').onclick = () => { [...dicks].forEach(removeDick); };
 
-  // images: drop or pick transparent PNG cut-outs to skin the pile
+  // drag-and-drop test images (local only, nothing uploads)
   function addFiles(files) {
     const list = [...files].filter(f => f.type.startsWith('image/'));
     if (!list.length) return;
     let done = 0;
     list.forEach(f => {
-      const url = URL.createObjectURL(f);
       const img = new Image();
       img.onload = () => {
-        images.push(analyse(img));
+        const sk = analyse(img); sk.tex = makeTexture(img); images.push(sk);
         if (++done === list.length) {
-          toast(`${images.length} image${images.length > 1 ? 's' : ''} loaded — new drops use them`);
-          // re-skin the current pile too
-          const old = [...dicks]; old.forEach(removeDick);
-          old.forEach((d, i) => setTimeout(() => dropOne(1), i * 60));
+          toast(`${list.length} image${list.length > 1 ? 's' : ''} added — just for you, until you refresh`);
+          for (let i = 0; i < 8; i++) setTimeout(() => dropOne(1), i * 120);
         }
       };
-      img.src = url;
+      img.src = URL.createObjectURL(f);
     });
   }
   const dropEl = document.getElementById('drop');
@@ -477,10 +481,148 @@ const CUTOUTS = [
   window.addEventListener('dragleave', e => { if (!e.relatedTarget) dropEl.classList.remove('on'); });
   window.addEventListener('drop', e => { e.preventDefault(); dropEl.classList.remove('on'); addFiles(e.dataTransfer.files); });
 
+  // Trace an image: principal axis, equal-area slices, circles per slice, joints between slices
+  function analyse(img) {
+    const N = 96, sc = N / Math.max(img.width, img.height);
+    const w = Math.max(2, Math.round(img.width * sc)), h = Math.max(2, Math.round(img.height * sc));
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    const cx2 = cv.getContext('2d'); cx2.drawImage(img, 0, 0, w, h);
+    const px = cx2.getImageData(0, 0, w, h).data;
+    const inside = new Uint8Array(w * h); const pts = [];
+    for (let i = 0; i < w * h; i++) if (px[i * 4 + 3] > 60) inside[i] = 1;
+    // close small gaps (ribs, hatching, thin limbs) so spindly drawings get a solid body
+    const morph = (src, grow) => { const out = new Uint8Array(w * h), R = 2;
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let hit = !grow;
+        for (let dy = -R; dy <= R && hit !== grow; dy++) for (let dx = -R; dx <= R; dx++) {
+          if (dx * dx + dy * dy > R * R) continue; const xx = x + dx, yy = y + dy;
+          const v = xx >= 0 && yy >= 0 && xx < w && yy < h ? src[yy * w + xx] : 0;
+          if (grow ? v : !v) { hit = grow; break; } }
+        out[y * w + x] = hit ? 1 : 0; }
+      return out; };
+    const closed = morph(morph(inside, true), false);
+    // fill enclosed holes
+    const outside = new Uint8Array(w * h), stack = [];
+    for (let x = 0; x < w; x++) stack.push(x, (h - 1) * w + x);
+    for (let y = 0; y < h; y++) stack.push(y * w, y * w + w - 1);
+    while (stack.length) { const i = stack.pop(); if (outside[i] || closed[i]) continue; outside[i] = 1;
+      const x = i % w, y = i / w | 0; if (x > 0) stack.push(i - 1); if (x < w - 1) stack.push(i + 1); if (y > 0) stack.push(i - w); if (y < h - 1) stack.push(i + w); }
+    for (let i = 0; i < w * h; i++) { inside[i] = outside[i] ? 0 : 1; if (inside[i]) pts.push(i); }
+    const total = pts.length;
+    if (total < 10) return { img, w: img.width, h: img.height, segs: [{ circles: [{ x: img.width / 2, y: img.height / 2, r: Math.min(img.width, img.height) / 2 }], clip: null }], joints: [] };
+    // principal axis
+    let mx = 0, my = 0; pts.forEach(i => { mx += i % w + .5; my += (i / w | 0) + .5; }); mx /= total; my /= total;
+    let sxx = 0, syy = 0, sxy = 0;
+    pts.forEach(i => { const dx = i % w + .5 - mx, dy = (i / w | 0) + .5 - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; });
+    const th = 0.5 * Math.atan2(2 * sxy, sxx - syy), e1 = { x: Math.cos(th), y: Math.sin(th) }, e2 = { x: -e1.y, y: e1.x };
+    const U = new Float32Array(w * h), V = new Float32Array(w * h);
+    let vMin = 1e9, vMax = -1e9;
+    pts.forEach(i => { const dx = i % w + .5 - mx, dy = (i / w | 0) + .5 - my; U[i] = dx * e1.x + dy * e1.y; V[i] = dx * e2.x + dy * e2.y; vMin = Math.min(vMin, V[i]); vMax = Math.max(vMax, V[i]); });
+    const us = pts.map(i => U[i]).sort((a, b) => a - b);
+    const spanU = us[us.length - 1] - us[0], spanV = vMax - vMin;
+    const nSeg = Math.max(3, Math.min(6, Math.round(2.5 + 1.5 * spanU / Math.max(1, spanV))));
+    const bounds = [-1e9]; for (let s2 = 1; s2 < nSeg; s2++) bounds.push(us[Math.floor(total * s2 / nSeg)]); bounds.push(1e9);
+    const segOf = u => { let s2 = 0; while (u >= bounds[s2 + 1]) s2++; return s2; };
+    // distance to the edge of the shape OR to a slice boundary, so each slice gets its own circles
+    const dt = new Float32Array(w * h), seg = new Int8Array(w * h).fill(-1);
+    pts.forEach(i => seg[i] = segOf(U[i]));
+    const at = (x, y, s2) => (x < 0 || y < 0 || x >= w || y >= h || seg[y * w + x] !== s2) ? 0 : dt[y * w + x];
+    for (let i = 0; i < w * h; i++) dt[i] = inside[i] ? 1e9 : 0;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x; if (!inside[i]) continue; const s2 = seg[i];
+      dt[i] = Math.min(dt[i], at(x - 1, y, s2) + 1, at(x, y - 1, s2) + 1, at(x - 1, y - 1, s2) + 1.414, at(x + 1, y - 1, s2) + 1.414); }
+    for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) { const i = y * w + x; if (!inside[i]) continue; const s2 = seg[i];
+      dt[i] = Math.min(dt[i], at(x + 1, y, s2) + 1, at(x, y + 1, s2) + 1, at(x + 1, y + 1, s2) + 1.414, at(x - 1, y + 1, s2) + 1.414); }
+    const toImg = (u, v) => ({ x: (mx + u * e1.x + v * e2.x) / sc, y: (my + u * e1.y + v * e2.y) / sc });
+    const segs = [];
+    for (let s2 = 0; s2 < nSeg; s2++) {
+      const mine = pts.filter(i => seg[i] === s2); const covered = new Uint8Array(w * h); let left = mine.length; const circles = [];
+      while (circles.length < 5 && left / mine.length > 0.12) {
+        let best = 0, bi = -1;
+        for (const i of mine) if (!covered[i] && dt[i] > best) { best = dt[i]; bi = i; }
+        if (bi < 0 || best < 1.2) break;
+        const bx = bi % w + 0.5, by = (bi / w | 0) + 0.5, R = best * 1.25;
+        circles.push({ x: bx / sc, y: by / sc, r: (best + 0.4) / sc });
+        for (const i of mine) if (!covered[i] && (i % w + .5 - bx) ** 2 + ((i / w | 0) + .5 - by) ** 2 <= R * R) { covered[i] = 1; left--; }
+      }
+      if (!circles.length) { // tiny slice: one circle at its middle
+        const m = mine[mine.length >> 1] ?? pts[0]; circles.push({ x: (m % w + .5) / sc, y: ((m / w | 0) + .5) / sc, r: 1.5 / sc });
+      }
+      // clip region for drawing this slice, overlapping its neighbours so bends don't show gaps
+      const lo = s2 === 0 ? us[0] - 50 : bounds[s2], hi = s2 === nSeg - 1 ? us[us.length - 1] + 50 : bounds[s2 + 1];
+      const pad = (hi - lo) * 0.16 + 1, L0 = s2 === 0 ? lo : lo - pad, H0 = s2 === nSeg - 1 ? hi : hi + pad;
+      const clip = [toImg(L0, vMin - 50), toImg(H0, vMin - 50), toImg(H0, vMax + 50), toImg(L0, vMax + 50)];
+      // pre-cut this slice into its own sprite so drawing is a plain drawImage
+      const ip = clip.map(p => ({ x: Math.max(0, Math.min(img.width, p.x)), y: Math.max(0, Math.min(img.height, p.y)) }));
+      const bx0 = Math.floor(Math.max(0, Math.min(...ip.map(p => p.x)))), by0 = Math.floor(Math.max(0, Math.min(...ip.map(p => p.y))));
+      const bx1 = Math.ceil(Math.min(img.width, Math.max(...ip.map(p => p.x)))), by1 = Math.ceil(Math.min(img.height, Math.max(...ip.map(p => p.y))));
+      const sp = document.createElement('canvas'); sp.width = Math.max(1, bx1 - bx0); sp.height = Math.max(1, by1 - by0);
+      const sc2 = sp.getContext('2d');
+      if (nSeg > 1) { sc2.beginPath(); clip.forEach((p, i) => i ? sc2.lineTo(p.x - bx0, p.y - by0) : sc2.moveTo(p.x - bx0, p.y - by0)); sc2.closePath(); sc2.clip(); }
+      sc2.drawImage(img, -bx0, -by0);
+      segs.push({ circles, clip, sprite: sp, sx: bx0, sy: by0 });
+    }
+    // joints: middle of the cross-section at each boundary, plus two side points
+    const joints = [];
+    for (let s2 = 1; s2 < nSeg; s2++) {
+      const bu = bounds[s2]; let lo = 1e9, hi = -1e9;
+      pts.forEach(i => { if (Math.abs(U[i] - bu) < 1.5) { lo = Math.min(lo, V[i]); hi = Math.max(hi, V[i]); } });
+      if (lo > hi) { lo = -1; hi = 1; }
+      const mid = (lo + hi) / 2, half = Math.max(1.5, (hi - lo) * 0.35);
+      joints.push({ mid: toImg(bu, mid), a: toImg(bu, mid - half), b: toImg(bu, mid + half) });
+    }
+    // mesh for smooth GPU bending: rows along the long axis, blended between neighbouring slices near each joint
+    const uLo = us[0] - 3, uHi = us[us.length - 1] + 3, vLo = vMin - 3, vHi = vMax + 3;
+    const B = [uLo, ...bounds.slice(1, -1), uHi];
+    const rows = [], nRows = nSeg * 6 + 1;
+    for (let r = 0; r < nRows; r++) {
+      const u = uLo + (uHi - uLo) * r / (nRows - 1);
+      let s2 = 0; while (s2 < nSeg - 1 && u >= B[s2 + 1]) s2++;
+      let a = s2, b = s2, wb = 0;
+      const lenL = s2 > 0 ? Math.min(B[s2 + 1] - B[s2], B[s2] - B[s2 - 1]) : 0;
+      const lenR = s2 < nSeg - 1 ? Math.min(B[s2 + 1] - B[s2], B[s2 + 2] - B[s2 + 1]) : 0;
+      const ss = t => t * t * (3 - 2 * t);
+      if (s2 > 0 && u - B[s2] < lenL * 0.4) { const hz = lenL * 0.4; a = s2 - 1; b = s2; wb = ss(Math.min(1, (u - (B[s2] - hz)) / (2 * hz))); }
+      else if (s2 < nSeg - 1 && B[s2 + 1] - u < lenR * 0.4) { const hz = lenR * 0.4; a = s2; b = s2 + 1; wb = ss(Math.max(0, (u - (B[s2 + 1] - hz)) / (2 * hz))); }
+      for (const v of [vLo, vHi]) { const p = toImg(u, v); rows.push({ x: p.x, y: p.y, a, b, wb }); }
+    }
+    return { img, w: img.width, h: img.height, segs, joints, e1, e2, mesh: rows };
+  }
+
+
+  // ---------- background gallery ----------
+  (function gallery() {
+    if (!GALLERY.length) { document.getElementById('gallery').style.display = 'none'; return; }
+    const order = [...GALLERY].sort(() => Math.random() - 0.5);
+    const slides = [...document.querySelectorAll('#gallery .slide')];
+    let i = 0, cur = 0;
+    function show(src) {
+      const next = slides[1 - cur];
+      next.querySelector('.bg').style.backgroundImage = next.querySelector('.fg').style.backgroundImage = `url("${src}")`;
+      next.classList.remove('on'); void next.offsetWidth; next.classList.add('on');
+      slides[cur].classList.remove('on'); cur = 1 - cur;
+    }
+    function step() {
+      const src = order[i++ % order.length];
+      const im = new Image();
+      im.onload = () => { show(src); setTimeout(step, GALLERY_SECONDS * 1000); };
+      im.onerror = () => setTimeout(step, 100);
+      im.src = src;
+      new Image().src = order[i % order.length]; // warm up the next one
+    }
+    step();
+  })();
+
+
   function loadCutouts() {
-    return Promise.all(CUTOUTS.map(src => new Promise(res => {
+    const list = CUTOUTS.length ? CUTOUTS : ['favicon.svg'];
+    return Promise.all(list.map(src => new Promise(res => {
       const img = new Image();
-      img.onload = () => { images.push(analyse(img)); res(); };
+      img.onload = async () => {
+        if (!img.width) { img.width = img.height = 256; }
+        const sk = analyse(img);
+        // slices as ImageBitmaps draw fastest
+        if (window.createImageBitmap) try { await Promise.all(sk.segs.map(async sg => { sg.sprite = await createImageBitmap(sg.sprite); })); } catch (e) {}
+        sk.tex = makeTexture(img); images.push(sk); res();
+      };
       img.onerror = () => { console.warn('Could not load', src); res(); };
       img.src = src;
     })));
@@ -489,12 +631,10 @@ const CUTOUTS = [
   window.addEventListener('resize', resize);
   resize();
   loadCutouts().then(() => {
-    if (images.length) facesBtn.style.display = 'none'; // faces only apply to the placeholders
-    Runner.run(runner, engine);
-    // a few to start the pile
     for (let i = 0; i < 4; i++) setTimeout(() => dropOne(), 200 + i * 500);
-    requestAnimationFrame(frame);
+    requestAnimationFrame(t => { last = t; frame(t); });
   });
+  window.__pile = { dicks, world, dropOne, S }; // for testing
 })();
 </script>
 </body>

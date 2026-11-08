@@ -1,54 +1,58 @@
 # The Pile — cockpile.com
 
-A single-page physics toy. No build step: it's just `index.html`, the physics library in `js/`, and your cut-outs in `images/`, hosted on Cloudflare.
+A single-page physics toy. No build step: `index.html`, the physics library in `js/`, cut-outs in `images/`, background gallery in `images/gallery/`. Hosted on Cloudflare — push to GitHub and it redeploys within a minute.
 
-## Adding your cut-outs
+## What it does
+
+- Cut-outs fall from the top and pile up. They're floppy: each one is a chain of jointed slices (traced automatically from the image's outline), drawn as one smoothly bending image.
+- Now and then a piece squirms.
+- Grab one to pull it around — it grows and comes "closer to camera", shoving the others aside.
+- Fling one hard and it flies off and disappears.
+- Behind everything, the gallery images cross-fade, about 3 seconds each, in random order.
+
+## Adding cut-outs
 
 1. **Prepare each image**
-   - Cut the drawing out onto a **transparent background** and save as PNG.
-   - Any pose works — the physics shape is traced automatically from each image's outline.
-   - Optimise it: crop tight, about **640px** on the longest side, and save as **WebP** (quality ~85) — each one ends up around 30–40 KB. A PNG works too, just bigger.
-   - Name it lowercase with hyphens, no spaces, e.g. `big-grumpy.webp`.
+   - Cut the drawing out onto a **transparent background** (PNG).
+   - Any pose works. Thin bits (ribs, limbs, hatching) are filled in for the physics automatically.
+   - Optimise: crop tight, about **640px** on the longest side, save as **WebP** (quality ~85) — around 30–40 KB each.
+   - Name it lowercase with hyphens, e.g. `big-grumpy.webp`.
+2. Put it in `images/`.
+3. In `index.html`, find `const CUTOUTS` and add a line: `"images/big-grumpy.webp",`
+4. Commit and push.
 
-2. **Add the file** to the `images/` folder.
+To take one out of the pile, delete its line from `CUTOUTS`.
 
-3. **Add one line to the list in `index.html`.** Search for `const CUTOUTS` and add:
+## Adding gallery images
 
-   ```js
-   "images/big-grumpy.webp",
-   ```
+1. Export JPG, about **1600px** on the longest side, quality ~78 (100–200 KB).
+2. Put it in `images/gallery/`.
+3. In `index.html`, find `const GALLERY` and add a line: `"images/gallery/new-one.jpg",`
+4. Change how long each shows with `GALLERY_SECONDS`.
 
-   Once the list has at least one image, every falling piece uses your cut-outs (picked at random) and the cartoon placeholders and **Faces** button disappear. Empty the list to get the placeholders back.
+## Tweaking the feel
 
-4. **Commit and push.** Cloudflare redeploys automatically within a minute.
+Near the top of the script, `const FEEL = { ... }`:
 
-### Editing on github.com (no software needed)
+| Setting | What it does |
+|---|---|
+| `floppiness` | Spring stiffness of the joints. Lower = floppier (1 is a limp noodle, 6 is stiff). |
+| `bounce` | Lower = more wobble after a knock. |
+| `maxBend` | How far one joint can fold (radians). |
+| `squirm` | How lively the squirming is. 0 turns it off. |
+| `fallDrag` | Higher = slower, floatier fall. |
+| `grabSize` | How much bigger a grabbed piece gets. |
+| `throwSpeed` | How hard you have to fling to throw one away. |
 
-- Open the repo → `images` → **Add file → Upload files** to add images.
-- Open `index.html` → pencil icon → edit the `CUTOUTS` list → **Commit changes**.
+Other things: page colours are `--bg1`, `--bg2`, `--accent` at the top of the `<style>`; how fast new ones drop is `spawnInterval()`; how full the pile gets is `capacity()`.
 
-### Trying images before uploading
+### Testing
 
-On a computer, drag PNGs straight onto the live page. They're used just for you, in that tab, until you refresh — nothing is uploaded.
+- Add `#debug` to the address (`cockpile.com/#debug`) to see the physics shapes (blue = moving, grey = asleep).
+- On a computer you can drag image files onto the page to try them in the pile — just for you, until you refresh.
 
-### Seeing the physics shapes
+## Connecting to Cloudflare (one-time, already done)
 
-Add `#debug` to the address (`cockpile.com/#debug`) and reload to see the traced outlines drawn in blue.
+Workers & Pages → Create → Connect to Git → this repo. Framework preset **None**, no build command, output directory `/`. Custom domain `cockpile.com`.
 
-## Other things you can change in `index.html`
-
-- Title — the `<h1>` near the bottom of the HTML, and `<title>` in the `<head>`.
-- Colours — `--bg1`, `--bg2`, `--accent` near the top.
-- Placeholder colours — the `SKINS` list in the script.
-- How fast they fall in — `spawnInterval()` (starts at one every 1.7s, speeds up to one every 0.35s).
-- How full the pile gets — `capacity()` (about 65% of the screen).
-- How big a grabbed one gets — `d.target = 1.75` in the `startdrag` handler.
-
-## Connecting to Cloudflare (one-time)
-
-1. Cloudflare dashboard → **Workers & Pages → Create → Connect to Git**.
-2. Pick this repository.
-3. Framework preset: **None**. Build command: *(leave empty)*. Build output directory: `/`.
-4. Deploy, then **Custom domains → Set up a custom domain** → `cockpile.com`. The domain is already on Cloudflare, so DNS is added for you.
-
-Physics by [Matter.js](https://brm.io/matter-js/) (MIT licence, `js/matter-LICENSE.txt`).
+Physics by [Planck.js](https://piqnt.com/planck.js/) (a JavaScript port of Box2D, MIT licence — `js/planck-LICENSE.txt`). Drawing uses WebGL, with a plain canvas fallback.
