@@ -5,18 +5,17 @@ A single-page physics toy. No build step: it's just `index.html`, the physics li
 ## Adding your cut-outs
 
 1. **Prepare each image**
-   - **PNG with a transparent background** (lasso or mask the drawing out, delete the background).
-   - Draw/rotate it so it **points up**, with the balls at the bottom.
-   - Crop tight to the drawing — the physics shape is fitted to the image's edges.
-   - About **400–600px** tall is plenty. Keep each file under ~200 KB.
-   - Name it lowercase with hyphens, no spaces, e.g. `big-grumpy.png`.
+   - Cut the drawing out onto a **transparent background** and save as PNG.
+   - Any pose works — the physics shape is traced automatically from each image's outline.
+   - Optimise it: crop tight, about **640px** on the longest side, and save as **WebP** (quality ~85) — each one ends up around 30–40 KB. A PNG works too, just bigger.
+   - Name it lowercase with hyphens, no spaces, e.g. `big-grumpy.webp`.
 
 2. **Add the file** to the `images/` folder.
 
 3. **Add one line to the list in `index.html`.** Search for `const CUTOUTS` and add:
 
    ```js
-   "images/big-grumpy.png",
+   "images/big-grumpy.webp",
    ```
 
    Once the list has at least one image, every falling piece uses your cut-outs (picked at random) and the cartoon placeholders and **Faces** button disappear. Empty the list to get the placeholders back.
@@ -25,12 +24,16 @@ A single-page physics toy. No build step: it's just `index.html`, the physics li
 
 ### Editing on github.com (no software needed)
 
-- Open the repo → `images` → **Add file → Upload files** to add PNGs.
+- Open the repo → `images` → **Add file → Upload files** to add images.
 - Open `index.html` → pencil icon → edit the `CUTOUTS` list → **Commit changes**.
 
 ### Trying images before uploading
 
 On a computer, drag PNGs straight onto the live page. They're used just for you, in that tab, until you refresh — nothing is uploaded.
+
+### Seeing the physics shapes
+
+Add `#debug` to the address (`cockpile.com/#debug`) and reload to see the traced outlines drawn in blue.
 
 ## Other things you can change in `index.html`
 
