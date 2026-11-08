@@ -1,0 +1,6 @@
+{
+  // Cloudflare config: serve this folder as a static website.
+  "name": "the-pile",
+  "compatibility_date": "2026-11-01",
+  "assets": { "directory": "./" }
+}

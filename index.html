@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>The Pile</title>
+<meta name="description" content="They just keep falling.">
+<meta property="og:title" content="The Pile">
+<meta property="og:description" content="They just keep falling.">
+<meta property="og:url" content="https://cockpile.com/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://cockpile.com/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=DM+Sans:wght@500;700&display=swap" rel="stylesheet">
+<script src="js/matter.min.js"></script>
+<style>
+  :root{
+    --bg1:#fff4e3; --bg2:#ffd9c2; --ink:#3a1f2b; --accent:#ff5a7a; --chip:#ffffffcc;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:var(--bg1);font-family:"DM Sans",system-ui,sans-serif;color:var(--ink);
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+  body{background:radial-gradient(120% 90% at 50% 0%,var(--bg1) 0%,#ffe9d6 55%,var(--bg2) 100%)}
+  canvas{position:fixed;inset:0;width:100vw;height:100vh;height:100dvh;display:block;touch-action:none;cursor:grab}
+  canvas.grabbing{cursor:grabbing}
+  .hud{position:fixed;left:16px;top:14px;pointer-events:none;z-index:2}
+  .hud h1{font-family:"Bagel Fat One",system-ui;font-weight:400;font-size:clamp(28px,5vw,48px);line-height:.9;letter-spacing:.5px;
+    color:var(--accent);text-shadow:3px 3px 0 var(--ink)}
+  .hud p{margin-top:6px;font-size:13px;font-weight:700;opacity:.65}
+  .bar{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;z-index:2;max-width:calc(100vw - 24px)}
+  .bar button,.bar label{font:700 13px "DM Sans",system-ui;color:var(--ink);background:var(--chip);border:2px solid var(--ink);
+    border-radius:999px;padding:8px 14px;cursor:pointer;backdrop-filter:blur(6px);box-shadow:2px 2px 0 var(--ink);transition:transform .08s}
+  .bar button:active,.bar label:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--ink)}
+  .bar .hot{background:var(--accent);color:#fff}
+  .bar input{display:none}
+  .drop{position:fixed;inset:12px;border:4px dashed var(--accent);border-radius:24px;display:none;align-items:center;justify-content:center;
+    font-family:"Bagel Fat One";font-size:32px;color:var(--accent);background:#fff8;z-index:5;pointer-events:none}
+  .drop.on{display:flex}
+  .toast{position:fixed;left:50%;top:18px;transform:translateX(-50%);background:var(--ink);color:#fff;font-weight:700;font-size:13px;
+    padding:8px 14px;border-radius:999px;opacity:0;transition:opacity .3s;z-index:6;pointer-events:none}
+  .toast.on{opacity:1}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="hud"><h1>The Pile</h1><p id="count">0 in the pile</p></div>
+<div class="bar">
+  <button id="rain" class="hot">Make it rain</button>
+  <button id="faces">Faces: on</button>
+  <button id="clear">Clear</button>
+</div>
+<div class="drop" id="drop">Drop your cut-outs</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ================================================================
+// YOUR CUT-OUTS
+// Put transparent PNGs in the images/ folder and list them here.
+// Draw them pointing UP (balls at the bottom). Leave the list empty
+// to show the built-in cartoon placeholders.
+// ================================================================
+const CUTOUTS = [
+  // "images/example-one.png",
+  // "images/example-two.png",
+];
+
+(() => {
+  const { Engine, Runner, Bodies, Body, Composite, Events, Mouse, MouseConstraint } = Matter;
+
+  // ---------- canvas ----------
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.setAttribute('data-pixel-ratio', DPR);
+  let W = 0, H = 0;
+
+  // ---------- physics ----------
+  const engine = Engine.create({ positionIterations: 10, velocityIterations: 8 });
+  engine.gravity.y = 1;
+  const world = engine.world;
+  const runner = Runner.create();
+
+  let walls = [];
+  function buildWalls() {
+    walls.forEach(w => Composite.remove(world, w));
+    const t = 400;
+    walls = [
+      Bodies.rectangle(W / 2, H + t / 2, W * 3, t, { isStatic: true, friction: 0.9, label: 'wall' }),
+      Bodies.rectangle(-t / 2, H / 2 - H, t, H * 4, { isStatic: true, friction: 0.3, label: 'wall' }),
+      Bodies.rectangle(W + t / 2, H / 2 - H, t, H * 4, { isStatic: true, friction: 0.3, label: 'wall' }),
+    ];
+    Composite.add(world, walls);
+  }
+
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+    buildWalls();
+    // pull anything outside back in
+    dicks.forEach(d => {
+      const p = d.body.position;
+      if (p.x < 0 || p.x > W || p.y > H) Body.setPosition(d.body, { x: Math.min(Math.max(p.x, 40), W - 40), y: Math.min(p.y, H - 80) });
+    });
+  }
+
+  // ---------- look ----------
+  const SKINS = [
+    { body: '#f6c4a3', tip: '#ee9c8f' }, { body: '#e8a77f', tip: '#d77f73' },
+    { body: '#c98a5e', tip: '#b8665c' }, { body: '#9a6143', tip: '#86463e' },
+    { body: '#6e4330', tip: '#5d3029' }, { body: '#ff9ec4', tip: '#ff6fa3' },
+    { body: '#9fd6ff', tip: '#6db8f2' }, { body: '#b9f0a6', tip: '#86d66d' },
+    { body: '#ffd86b', tip: '#f5b53d' }, { body: '#c7b2ff', tip: '#a084f5' },
+  ];
+  const INK = '#3a1f2b';
+  let showFaces = true;
+  const images = []; // dropped skins: { img, aspect }
+
+  // ---------- the shape ----------
+  // Local frame: origin between the balls, shaft points up (-y).
+  // s = overall size, L = shaft length factor.
+  function geometry(s, L) {
+    return {
+      rb: 0.30 * s, bx: 0.27 * s,          // balls
+      w: 0.40 * s, len: L * s,             // shaft
+      rh: 0.25 * s,                        // tip
+      // bounding box used for fitting images
+      box: { x: -0.57 * s, y: -(L * s + 0.25 * s), w: 1.14 * s, h: L * s + 0.55 * s },
+    };
+  }
+
+  const dicks = [];
+  let nextId = 0;
+
+  function baseSize() { return W < 700 ? Math.max(30, W / 8.5) : Math.min(W, 1100) / 13; }
+
+  function spawn(x, y, opts = {}) {
+    const s = baseSize() * (0.7 + Math.random() * 0.6);
+    let skinImg = null;
+    let L = 0.9 + Math.random() * 0.6;
+    if (images.length) {
+      skinImg = images[Math.floor(Math.random() * images.length)];
+      // match the physics shape to the picture's proportions
+      L = Math.min(2.4, Math.max(0.6, skinImg.aspect * 1.14 - 0.55));
+    }
+    const g = geometry(s, L);
+    const mat = { friction: 0.6, frictionStatic: 0.8, restitution: 0.15, density: 0.0016 };
+    const parts = [
+      Bodies.circle(x - g.bx, y, g.rb, mat),
+      Bodies.circle(x + g.bx, y, g.rb, mat),
+      Bodies.rectangle(x, y - g.len / 2, g.w, g.len, { ...mat, chamfer: { radius: g.w * 0.45 } }),
+      Bodies.circle(x, y - g.len, g.rh, mat),
+    ];
+    const body = Body.create({ parts, frictionAir: 0.035, label: 'dick' });
+    const off = { x: body.position.x - x, y: body.position.y - y }; // COM in local frame
+    Body.setAngle(body, (Math.random() - 0.5) * Math.PI * 1.4);
+    Body.setAngularVelocity(body, (Math.random() - 0.5) * 0.04);
+    Body.setVelocity(body, { x: (Math.random() - 0.5) * 1.5, y: opts.vy ?? 0.5 });
+    const d = {
+      id: nextId++, body, s, L, g, off,
+      skin: SKINS[Math.floor(Math.random() * SKINS.length)],
+      img: skinImg,
+      scale: 1, target: 1,
+      jiggle: 0, jt: Math.random() * 10,
+      blink: Math.random() * 4, born: performance.now(),
+      held: false,
+    };
+    body.plugin.d = d;
+    dicks.push(d);
+    Composite.add(world, body);
+    return d;
+  }
+
+  function removeDick(d) {
+    Composite.remove(world, d.body);
+    dicks.splice(dicks.indexOf(d), 1);
+  }
+
+  // ---------- spawning over time ----------
+  function capacity() {
+    const avgArea = 1.14 * 1.75 * baseSize() ** 2; // rough footprint
+    return Math.round(Math.max(25, Math.min(240, (W * H * 0.65) / avgArea)));
+  }
+  const t0 = performance.now();
+  let spawnTimer = 0;
+  function spawnInterval() {
+    // starts gentle, speeds up the longer the page is open
+    const mins = (performance.now() - t0) / 60000;
+    return Math.max(350, 1700 - mins * 450);
+  }
+  function dropOne(vy) {
+    const margin = baseSize();
+    spawn(margin + Math.random() * (W - margin * 2), -baseSize() * 2.2, { vy });
+  }
+
+  // ---------- grabbing ----------
+  const mouse = Mouse.create(canvas);
+  mouse.pixelRatio = DPR;
+  // Matter's mouse swallows wheel events; we don't need them
+  mouse.element.removeEventListener('mousewheel', mouse.mousewheel);
+  mouse.element.removeEventListener('DOMMouseScroll', mouse.mousewheel);
+  const mc = MouseConstraint.create(engine, {
+    mouse, constraint: { stiffness: 0.18, damping: 0.1, render: { visible: false } },
+  });
+  Composite.add(world, mc);
+  let held = null;
+  Events.on(mc, 'startdrag', e => {
+    const d = e.body && e.body.plugin && e.body.plugin.d;
+    if (!d) { mc.constraint.bodyB = null; return; }
+    held = d; d.held = true; d.target = 1.75; d.jiggle = 1;
+    canvas.classList.add('grabbing');
+  });
+  Events.on(mc, 'enddrag', () => {
+    if (held) { held.held = false; held.target = 1; held.jiggle = 0.8; }
+    held = null; canvas.classList.remove('grabbing');
+  });
+
+  // ---------- per-step logic ----------
+  Events.on(engine, 'beforeUpdate', () => {
+    for (const d of dicks) {
+      // smooth grow / shrink (this physically shoves neighbours away)
+      if (Math.abs(d.target - d.scale) > 0.002) {
+        const next = d.scale + (d.target - d.scale) * 0.16;
+        Body.scale(d.body, next / d.scale, next / d.scale);
+        d.scale = next;
+      }
+      // held one turns to face the camera (upright)
+      if (d.held) {
+        let a = d.body.angle % (Math.PI * 2);
+        if (a > Math.PI) a -= Math.PI * 2; if (a < -Math.PI) a += Math.PI * 2;
+        Body.setAngularVelocity(d.body, d.body.angularVelocity * 0.85 - a * 0.025);
+      }
+    }
+  });
+
+  Events.on(engine, 'collisionStart', e => {
+    for (const p of e.pairs) {
+      const A = p.bodyA.parent, B = p.bodyB.parent;
+      const va = A.velocity, vb = B.velocity;
+      const speed = Math.hypot(va.x - vb.x, va.y - vb.y);
+      if (speed < 1.2) continue;
+      const j = Math.min(1, speed / 7);
+      if (A.plugin.d) A.plugin.d.jiggle = Math.max(A.plugin.d.jiggle, j);
+      if (B.plugin.d) B.plugin.d.jiggle = Math.max(B.plugin.d.jiggle, j);
+    }
+  });
+
+  // ---------- drawing ----------
+  function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
+  function circ(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); }
+
+  // all shapes grown by `e` — used for the outline pass then the fill pass
+  function silhouette(g, e, bend, fill) {
+    ctx.fillStyle = fill;
+    circ(-g.bx, 0, g.rb + e); ctx.fill();
+    circ(g.bx, 0, g.rb + e); ctx.fill();
+    // shaft as a slightly bendy quad so the wobble looks rubbery
+    const hw = g.w / 2 + e, top = -g.len;
+    ctx.beginPath();
+    ctx.moveTo(-hw, 0);
+    ctx.quadraticCurveTo(-hw + bend * 0.5, top / 2, -hw + bend, top);
+    ctx.lineTo(hw + bend, top);
+    ctx.quadraticCurveTo(hw + bend * 0.5, top / 2, hw, 0);
+    ctx.closePath(); ctx.fill();
+  }
+
+  function drawVector(d, t) {
+    const g = d.g, s = d.s;
+    const bend = Math.sin(d.jt * 11) * d.jiggle * s * 0.18;
+    const lw = s * 0.055;
+    // outline
+    silhouette(g, lw, bend, INK);
+    circ(bend, -g.len, g.rh + lw); ctx.fillStyle = INK; ctx.fill();
+    // fill
+    silhouette(g, 0, bend, d.skin.body);
+    circ(bend, -g.len, g.rh); ctx.fillStyle = d.skin.tip; ctx.fill();
+    // ball crease + highlights
+    ctx.strokeStyle = INK; ctx.lineWidth = lw * 0.6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, g.rb * 0.15); ctx.lineTo(0, g.rb * 0.8); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.35)';
+    circ(-g.bx - g.rb * 0.35, -g.rb * 0.35, g.rb * 0.22); ctx.fill();
+    circ(bend - g.rh * 0.35, -g.len - g.rh * 0.4, g.rh * 0.25); ctx.fill();
+    // tip slit
+    ctx.beginPath(); ctx.moveTo(bend, -g.len - g.rh * 0.85); ctx.lineTo(bend, -g.len - g.rh * 0.45); ctx.stroke();
+
+    if (!showFaces) return;
+    // face on the upper shaft
+    const fy = -g.len * 0.62, fx = bend * 0.62;
+    const er = g.w * 0.17, ex = g.w * 0.2;
+    d.blink -= 1 / 60;
+    const blinking = d.blink < 0.12;
+    if (d.blink < 0) d.blink = 2 + Math.random() * 4;
+    const surprised = d.held;
+    // eyes look at the cursor
+    const inv = toLocal(d, mouse.position);
+    const look = Math.atan2(inv.y - fy, inv.x - fx);
+    for (const sx of [-1, 1]) {
+      const cx = fx + sx * ex, r = surprised ? er * 1.25 : er;
+      if (blinking && !surprised) {
+        ctx.beginPath(); ctx.moveTo(cx - r, fy); ctx.lineTo(cx + r, fy); ctx.stroke();
+      } else {
+        circ(cx, fy, r); ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke();
+        circ(cx + Math.cos(look) * r * 0.4, fy + Math.sin(look) * r * 0.4, r * 0.5); ctx.fillStyle = INK; ctx.fill();
+      }
+    }
+    // cheeks
+    ctx.fillStyle = 'rgba(255,80,110,.28)';
+    circ(fx - ex * 1.9, fy + er * 1.6, er * 0.8); ctx.fill();
+    circ(fx + ex * 1.9, fy + er * 1.6, er * 0.8); ctx.fill();
+    // mouth
+    ctx.beginPath();
+    if (surprised) { circ(fx, fy + er * 2.4, er * 0.65); ctx.fillStyle = INK; ctx.fill(); }
+    else { ctx.arc(fx, fy + er * 1.4, er * 0.9, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke(); }
+  }
+
+  function drawImage(d) {
+    const b = d.g.box, im = d.img.img;
+    // "contain" fit into the physics bounding box
+    const k = Math.min(b.w / im.width, b.h / im.height);
+    const w = im.width * k, h = im.height * k;
+    ctx.drawImage(im, b.x + (b.w - w) / 2, b.y + (b.h - h), w, h);
+  }
+
+  // world point -> this body's unscaled local frame
+  function toLocal(d, p) {
+    const b = d.body, dx = p.x - b.position.x, dy = p.y - b.position.y;
+    const c = Math.cos(-b.angle), sn = Math.sin(-b.angle);
+    return { x: (dx * c - dy * sn) / d.scale + d.off.x, y: (dx * sn + dy * c) / d.scale + d.off.y };
+  }
+
+  function drawDick(d, t) {
+    const b = d.body;
+    d.jt += 1 / 60;
+    d.jiggle *= 0.94;
+    const sq = Math.sin(d.jt * 18) * d.jiggle * 0.08;
+    ctx.save();
+    ctx.translate(b.position.x, b.position.y);
+    ctx.rotate(b.angle);
+    ctx.scale(d.scale * (1 + sq), d.scale * (1 - sq));
+    ctx.translate(-d.off.x, -d.off.y);
+    const shadow = () => { ctx.shadowColor = 'rgba(58,31,43,.35)'; ctx.shadowBlur = 30 * d.scale; ctx.shadowOffsetY = 18; };
+    if (d.img) { if (d.held) shadow(); drawImage(d); }
+    else {
+      if (d.held) { // shadow pass first, so it doesn't smudge the outlines
+        ctx.save(); shadow();
+        silhouette(d.g, d.s * 0.055, 0, INK); circ(0, -d.g.len, d.g.rh + d.s * 0.055); ctx.fill();
+        ctx.restore();
+      }
+      drawVector(d, t);
+    }
+    ctx.restore();
+  }
+
+  function frame(t) {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    // floor shadow
+    const grd = ctx.createLinearGradient(0, H - 40, 0, H);
+    grd.addColorStop(0, 'rgba(58,31,43,0)'); grd.addColorStop(1, 'rgba(58,31,43,.12)');
+    ctx.fillStyle = grd; ctx.fillRect(0, H - 40, W, 40);
+
+    // spawn
+    spawnTimer += 16.7;
+    if (spawnTimer > spawnInterval() && dicks.length < capacity() && !document.hidden) {
+      spawnTimer = 0; dropOne();
+    }
+
+    // tidy anything lost off-screen
+    for (let i = dicks.length - 1; i >= 0; i--) {
+      if (dicks[i].body.position.y > H + 600) removeDick(dicks[i]);
+    }
+
+    // draw: held one last so it sits "closest to camera"
+    for (const d of dicks) if (!d.held) drawDick(d, t);
+    if (held) drawDick(held, t);
+
+    countEl.textContent = `${dicks.length} in the pile` + (dicks.length >= capacity() ? ' · it’s full' : '');
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- UI ----------
+  const countEl = document.getElementById('count');
+  const toastEl = document.getElementById('toast');
+  let toastT;
+  function toast(msg) { toastEl.textContent = msg; toastEl.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('on'), 2200); }
+
+  document.getElementById('rain').onclick = () => {
+    const room = Math.max(0, Math.round(capacity() * 1.3) - dicks.length);
+    const n = Math.min(15, room);
+    if (!n) return toast('The pile can’t take any more');
+    for (let i = 0; i < n; i++) setTimeout(() => dropOne(2), i * 90);
+  };
+  document.getElementById('clear').onclick = () => { [...dicks].forEach(removeDick); held = null; };
+  const facesBtn = document.getElementById('faces');
+  facesBtn.onclick = () => { showFaces = !showFaces; facesBtn.textContent = 'Faces: ' + (showFaces ? 'on' : 'off'); };
+
+  // images: drop or pick transparent PNG cut-outs to skin the pile
+  function addFiles(files) {
+    const list = [...files].filter(f => f.type.startsWith('image/'));
+    if (!list.length) return;
+    let done = 0;
+    list.forEach(f => {
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      img.onload = () => {
+        images.push({ img, aspect: img.height / img.width });
+        if (++done === list.length) {
+          toast(`${images.length} image${images.length > 1 ? 's' : ''} loaded — new drops use them`);
+          // re-skin the current pile too
+          const old = [...dicks]; old.forEach(removeDick);
+          old.forEach((d, i) => setTimeout(() => dropOne(1), i * 60));
+        }
+      };
+      img.src = url;
+    });
+  }
+  const dropEl = document.getElementById('drop');
+  window.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('on'); });
+  window.addEventListener('dragleave', e => { if (!e.relatedTarget) dropEl.classList.remove('on'); });
+  window.addEventListener('drop', e => { e.preventDefault(); dropEl.classList.remove('on'); addFiles(e.dataTransfer.files); });
+
+  function loadCutouts() {
+    return Promise.all(CUTOUTS.map(src => new Promise(res => {
+      const img = new Image();
+      img.onload = () => { images.push({ img, aspect: img.height / img.width }); res(); };
+      img.onerror = () => { console.warn('Could not load', src); res(); };
+      img.src = src;
+    })));
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+  loadCutouts().then(() => {
+    if (images.length) facesBtn.style.display = 'none'; // faces only apply to the placeholders
+    Runner.run(runner, engine);
+    // a few to start the pile
+    for (let i = 0; i < 4; i++) setTimeout(() => dropOne(), 200 + i * 500);
+    requestAnimationFrame(frame);
+  });
+})();
+</script>
+</body>
+</html>
