@@ -26,6 +26,7 @@
   .veil{position:fixed;inset:0;z-index:0;background:linear-gradient(180deg,rgba(255,244,227,.12),rgba(255,233,214,.28))}
   canvas{position:fixed;inset:0;z-index:1;width:100vw;height:100vh;height:100dvh;display:block;touch-action:none;cursor:grab}
   canvas.grabbing{cursor:grabbing}
+  #wet{z-index:1;pointer-events:none}
   .bar{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;z-index:2;max-width:calc(100vw - 24px)}
   .bar button,.bar label{font:700 13px "DM Sans",system-ui;color:var(--ink);background:var(--chip);border:2px solid var(--ink);
     border-radius:999px;padding:8px 14px;cursor:pointer;backdrop-filter:blur(6px);box-shadow:2px 2px 0 var(--ink);transition:transform .08s}
@@ -44,6 +45,7 @@
 <div id="gallery"></div>
 <div class="veil"></div>
 <canvas id="c"></canvas>
+<canvas id="wet"></canvas>
 <div class="bar">
   <button id="rain" class="hot">Make it rain</button>
   <button id="clear">Clear</button>
@@ -66,7 +68,7 @@ const CUTOUTS = [
 
 // Background gallery: one continuous reel scrolling left to right, in random order.
 // GALLERY_SECONDS = roughly how long each image takes to pass.
-const GALLERY_SECONDS = 3;
+const GALLERY_SECONDS = 9;
 const GALLERY = [
   "images/gallery/beverly-hills-cock.jpg",
   "images/gallery/cock-fight.jpg",
@@ -395,50 +397,101 @@ const GALLERY = [
   }
   function drawPieceGL(d) {
     const v = pieceVerts(d);
-    if (d.thrown) stampTrail(d, v);
     drawVerts(d.img.tex, v, 1);
   }
-  // ---------- smear trail for thrown pieces ----------
-  // each frame, the thrown piece's copies (with in-betweens so it's continuous) go into one GPU buffer, then fade out
-  const trail = [];
-  function stampTrail(d, v) {
-    const prev = d.lastStamp, copies = [];
-    if (prev) {
-      let dist = 0; for (let i = 0; i < v.length; i += 4) dist = Math.max(dist, Math.hypot(v[i] - prev[i], v[i + 1] - prev[i + 1]));
-      const steps = Math.min(16, Math.ceil(dist / 8));
-      for (let s2 = 1; s2 < steps; s2++) {
-        const t = s2 / steps, w = new Float32Array(v.length);
-        for (let i = 0; i < v.length; i++) w[i] = (i % 4 < 2) ? prev[i] + (v[i] - prev[i]) * t : v[i];
-        copies.push(w);
+  // ---------- liquid smear for thrown pieces ----------
+  const wetCv = document.getElementById('wet'), wet = wetCv.getContext('2d');
+  const smears = [];
+  const scr = document.createElement('canvas'), sc = scr.getContext('2d');
+  function tintOf(img) { // average colour of the drawing, to tint its slime a little
+    const c = document.createElement('canvas'); c.width = c.height = 8; const x = c.getContext('2d');
+    x.drawImage(img, 0, 0, 8, 8); const p = x.getImageData(0, 0, 8, 8).data; let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < p.length; i += 4) if (p[i + 3] > 100) { r += p[i]; g += p[i + 1]; b += p[i + 2]; n++; }
+    return n ? [r / n | 0, g / n | 0, b / n | 0] : [230, 220, 200];
+  }
+  function trackSmear(d) {
+    const mid = d.strips[d.strips.length >> 1].body.getPosition(), x = mid.x * S, y = mid.y * S;
+    if (!d.smear) { d.smear = { pts: [], drips: [], dots: [], nz: 0.5, t: performance.now(), w: d.k * Math.min(d.img.w, d.img.h) * 0.42, tint: d.img.tint }; smears.push(d.smear); if (smears.length > 8) smears.shift(); }
+    const sm = d.smear, last = sm.pts[sm.pts.length - 1];
+    if (last && Math.hypot(x - last.x, y - last.y) < 4) return;
+    if (x < -300 || x > W + 300 || y < -300 || y > H + 300) return;
+    // thickness wobbles a little, like it's smearing unevenly
+    sm.nz = sm.nz * 0.75 + Math.random() * 0.25; // smooth random thickness
+    if (!last) for (let i = 0; i < 9; i++) { const a = Math.random() * Math.PI * 2, dd = sm.w * (0.3 + Math.random() * 0.9); sm.dots.push({ x: x + Math.cos(a) * dd, y: y + Math.sin(a) * dd, r: 2 + Math.random() * sm.w * 0.16 }); }
+    if (last) {
+      // drips and droplets by distance travelled, so it looks the same at any frame rate
+      const segLen = Math.hypot(x - last.x, y - last.y);
+      for (let k = 0; k < segLen / 22; k++) {
+        const t = Math.random(), px = last.x + (x - last.x) * t, py = last.y + (y - last.y) * t;
+        if (Math.random() < 0.5) { const a = Math.random() * Math.PI * 2, dd = sm.w * (0.55 + Math.random() * 0.5); sm.dots.push({ x: px + Math.cos(a) * dd, y: py + Math.sin(a) * dd, r: 1.5 + Math.random() * sm.w * 0.07 }); }
+        if (Math.random() < 0.28) sm.drips.push({ x: px + (Math.random() - 0.5) * sm.w * 0.6, y: py + sm.w * 0.3, len: 0, max: 40 + Math.random() * 170, born: performance.now() + Math.random() * 400, r: 3 + Math.random() * Math.max(3, sm.w * 0.09) });
+      }
+      // in-between points keep the streak curvy even when frames are far apart
+      const nIn = Math.min(8, Math.floor(segLen / 30));
+      const lw = last.w, nw = sm.w * (0.55 + sm.nz * 0.9);
+      for (let k = 1; k <= nIn; k++) { const t = k / (nIn + 1); sm.pts.push({ x: last.x + (x - last.x) * t, y: last.y + (y - last.y) * t, w: lw + (nw - lw) * t }); }
+    }
+    sm.pts.push({ x, y, w: sm.w * (0.55 + sm.nz * 0.9) });
+  }
+  function path(pts) {
+    wet.beginPath(); wet.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length - 1; i++) { const mx = (pts[i].x + pts[i + 1].x) / 2, my = (pts[i].y + pts[i + 1].y) / 2; wet.quadraticCurveTo(pts[i].x, pts[i].y, mx, my); }
+    const l = pts[pts.length - 1]; wet.lineTo(l.x, l.y);
+  }
+  function drawSmears() {
+    if (wetCv.width !== canvas.width || wetCv.height !== canvas.height) { wetCv.width = canvas.width; wetCv.height = canvas.height; }
+    wet.setTransform(DPR, 0, 0, DPR, 0, 0); wet.clearRect(0, 0, W, H);
+    const now = performance.now(), life = FEEL.trailSeconds * 1000;
+    for (let i = smears.length - 1; i >= 0; i--) {
+      const sm = smears[i], age = (now - sm.t) / life;
+      if (age >= 1) { smears.splice(i, 1); continue; }
+      if (sm.pts.length < 2) continue;
+      const fade = (1 - age) * (1 - age * 0.5), dry = 1 - age * 0.35; // fades and thins as it dries
+      const [r, g, b] = sm.tint;
+      const slime = `${(r + 255 * 2) / 3 | 0},${(g + 255 * 2) / 3 | 0},${(b + 240 * 2) / 3 | 0}`, dark = `${r * 0.35 | 0},${g * 0.35 | 0},${b * 0.35 | 0}`;
+      const n = sm.pts.length;
+      // a layer is drawn solid on scratch, then laid on once, so overlaps don't bead up
+      const layer = (alpha, color, widthK, dy) => {
+        if (scr.width !== wetCv.width || scr.height !== wetCv.height) { scr.width = wetCv.width; scr.height = wetCv.height; }
+        sc.setTransform(DPR, 0, 0, DPR, 0, 0); sc.clearRect(0, 0, W, H);
+        sc.strokeStyle = sc.fillStyle = `rgb(${color})`; sc.lineCap = 'round'; sc.lineJoin = 'round';
+        for (let j = 1; j < n; j++) {
+          const p0 = sm.pts[j - 1], p1 = sm.pts[j], taper = Math.min(1, (n - j) / 6 + 0.25); // thins out toward the end
+          sc.lineWidth = Math.max(1, (p0.w + p1.w) / 2 * widthK * dry * taper);
+          sc.beginPath(); sc.moveTo(p0.x, p0.y + dy); sc.lineTo(p1.x, p1.y + dy); sc.stroke();
+        }
+        for (const dt of sm.dots) { sc.beginPath(); sc.arc(dt.x, dt.y + dy, dt.r * widthK * dry, 0, Math.PI * 2); sc.fill(); }
+        wet.save(); wet.setTransform(1, 0, 0, 1, 0, 0); wet.globalAlpha = alpha * fade; wet.drawImage(scr, 0, 0); wet.restore();
+      };
+      layer(0.18, dark, 1.14, 1.5);   // darker wet edge
+      layer(0.36, slime, 1, 0);       // the slime itself
+      // thin strands inside the slime
+      wet.lineCap = 'round'; wet.lineJoin = 'round';
+      for (const [k2, a2] of [[-0.28, 0.22], [0.3, 0.16]]) {
+        wet.strokeStyle = `rgba(${dark},${a2 * fade})`; wet.lineWidth = Math.max(1, sm.w * 0.035);
+        wet.save(); wet.translate(0, sm.w * k2 * dry); path(sm.pts); wet.stroke(); wet.restore();
+      }
+      // glossy highlight running along the top
+      wet.lineCap = 'round'; wet.lineJoin = 'round';
+      wet.strokeStyle = `rgba(255,255,255,${0.55 * fade})`; wet.lineWidth = Math.max(1, sm.w * 0.12 * dry);
+      wet.save(); wet.translate(0, -sm.w * 0.18 * dry); path(sm.pts); wet.stroke(); wet.restore();
+      wet.strokeStyle = `rgba(255,255,255,${0.3 * fade})`; wet.lineWidth = Math.max(1, sm.w * 0.05 * dry);
+      wet.save(); wet.translate(0, sm.w * 0.12 * dry); path(sm.pts); wet.stroke(); wet.restore();
+      // drips run down, slowing as they go
+      for (const dp of sm.drips) {
+        const t = (now - dp.born) / 1000; if (t < 0) continue; dp.len = dp.max * (1 - Math.exp(-t * 1.1));
+        const x = dp.x, y0 = dp.y, y1 = dp.y + dp.len, rr = dp.r * dry;
+        const gr = wet.createLinearGradient(0, y0, 0, y1);
+        gr.addColorStop(0, `rgba(${(r + 510) / 3 | 0},${(g + 510) / 3 | 0},${(b + 480) / 3 | 0},${0.45 * fade})`);
+        gr.addColorStop(1, `rgba(${(r + 510) / 3 | 0},${(g + 510) / 3 | 0},${(b + 480) / 3 | 0},${0.6 * fade})`);
+        wet.strokeStyle = gr; wet.lineWidth = rr * 1.1;
+        wet.beginPath(); wet.moveTo(x, y0); wet.lineTo(x, y1); wet.stroke();
+        wet.fillStyle = `rgba(${(r + 510) / 3 | 0},${(g + 510) / 3 | 0},${(b + 480) / 3 | 0},${0.7 * fade})`;
+        wet.beginPath(); wet.ellipse(x, y1, rr, rr * 1.25, 0, 0, Math.PI * 2); wet.fill();
+        wet.fillStyle = `rgba(255,255,255,${0.6 * fade})`;
+        wet.beginPath(); wet.arc(x - rr * 0.35, y1 - rr * 0.4, rr * 0.3, 0, Math.PI * 2); wet.fill();
       }
     }
-    copies.push(v); d.lastStamp = v;
-    // join the copies into one triangle strip (degenerate triangles between them)
-    const n = v.length / 4, total = copies.length * (n + 2);
-    const all = new Float32Array(total * 4); let o = 0;
-    for (const c of copies) {
-      all.set(c.subarray(0, 4), o); o += 4;
-      all.set(c, o); o += c.length;
-      all.set(c.subarray(c.length - 4), o); o += 4;
-    }
-    const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, all, gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    trail.push({ tex: d.img.tex, b, count: total, t: performance.now() });
-  }
-  function drawTrail() {
-    if (!trail.length) return;
-    const now = performance.now(), life = FEEL.trailSeconds * 1000;
-    while (trail.length && now - trail[0].t > life) gl.deleteBuffer(trail.shift().b);
-    for (const st of trail) {
-      const age = (now - st.t) / life;
-      gl.bindBuffer(gl.ARRAY_BUFFER, st.b);
-      gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 16, 0); gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 16, 8);
-      gl.bindTexture(gl.TEXTURE_2D, st.tex);
-      gl.uniform1f(uAlpha, 0.45 * (1 - age) * (1 - age));
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, st.count);
-    }
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 16, 0); gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 16, 8);
   }
   // 2D fallback: pre-cut slices
   function drawPiece2D(d) {
@@ -474,7 +527,8 @@ const GALLERY = [
       if (y > H + 600 || (d.thrown && (x < -500 || x > W + 500 || y > H + 400 || y < -2500))) removeDick(d);
     }
 
-    if (gl) drawTrail();
+    for (const d of dicks) if (d.thrown) trackSmear(d);
+    drawSmears();
     for (const d of dicks) if (!d.held) gl ? drawPieceGL(d) : drawPiece2D(d);
     if (held) gl ? drawPieceGL(held) : drawPiece2D(held);
 
@@ -511,7 +565,7 @@ const GALLERY = [
     list.forEach(f => {
       const img = new Image();
       img.onload = () => {
-        const sk = analyse(img); sk.tex = makeTexture(img); images.push(sk);
+        const sk = analyse(img); sk.tex = makeTexture(img); sk.tint = tintOf(img); images.push(sk);
         if (++done === list.length) {
           toast(`${list.length} image${list.length > 1 ? 's' : ''} added — just for you, until you refresh`);
           for (let i = 0; i < 8; i++) setTimeout(() => dropOne(1), i * 120);
@@ -679,7 +733,7 @@ const GALLERY = [
         const sk = analyse(img);
         // slices as ImageBitmaps draw fastest
         if (window.createImageBitmap) try { await Promise.all(sk.segs.map(async sg => { sg.sprite = await createImageBitmap(sg.sprite); })); } catch (e) {}
-        sk.tex = makeTexture(img); images.push(sk); res();
+        sk.tex = makeTexture(img); sk.tint = tintOf(img); images.push(sk); res();
       };
       img.onerror = () => { console.warn('Could not load', src); res(); };
       img.src = src;
