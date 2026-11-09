@@ -22,13 +22,7 @@
     -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
   body{background:radial-gradient(120% 90% at 50% 0%,var(--bg1) 0%,#ffe9d6 55%,var(--bg2) 100%)}
   #gallery{position:fixed;inset:0;z-index:0;overflow:hidden;background:var(--bg1)}
-  .slide{position:absolute;inset:0;opacity:0;transition:opacity 1.1s ease}
-  .slide.on{opacity:1}
-  .slide .bg,.slide .fg{position:absolute;inset:0;background-position:center;background-repeat:no-repeat}
-  .slide .bg{background-size:cover;filter:blur(36px) saturate(1.1) brightness(.95);transform:scale(1.25)}
-  .slide .fg{background-size:contain;transform-origin:center}
-  .slide.on .fg{animation:drift 4.6s linear forwards}
-  @keyframes drift{from{transform:scale(1) translateY(0)}to{transform:scale(1.06) translateY(-1%)}}
+  #gallery img{position:absolute;top:0;left:0;height:100%;width:auto;will-change:transform;display:block;user-select:none;pointer-events:none}
   .veil{position:fixed;inset:0;z-index:0;background:linear-gradient(180deg,rgba(255,244,227,.12),rgba(255,233,214,.28))}
   canvas{position:fixed;inset:0;z-index:1;width:100vw;height:100vh;height:100dvh;display:block;touch-action:none;cursor:grab}
   canvas.grabbing{cursor:grabbing}
@@ -47,7 +41,7 @@
 </style>
 </head>
 <body>
-<div id="gallery"><div class="slide"><div class="bg"></div><div class="fg"></div></div><div class="slide"><div class="bg"></div><div class="fg"></div></div></div>
+<div id="gallery"></div>
 <div class="veil"></div>
 <canvas id="c"></canvas>
 <div class="bar">
@@ -70,7 +64,8 @@ const CUTOUTS = [
   "images/penisaurus-rex.webp",
 ];
 
-// Background gallery: shown one at a time, ~3 seconds each, in random order.
+// Background gallery: one continuous reel scrolling left to right, in random order.
+// GALLERY_SECONDS = roughly how long each image takes to pass.
 const GALLERY_SECONDS = 3;
 const GALLERY = [
   "images/gallery/beverly-hills-cock.jpg",
@@ -94,7 +89,6 @@ const GALLERY = [
   "images/gallery/ironcock.jpg",
   "images/gallery/kermit-the-cock.jpg",
   "images/gallery/lolli-cock.jpg",
-  "images/gallery/meme-face.jpg",
   "images/gallery/my-little-penis.jpg",
   "images/gallery/octo-cock.jpg",
   "images/gallery/penisaurus-rex.jpg",
@@ -110,13 +104,14 @@ const GALLERY = [
   // FEEL — tweak these to change how the pile behaves
   // ================================================================
   const FEEL = {
-    floppiness: 2.2,   // Hz of the springy joints: lower = floppier (1 = limp noodle, 6 = stiff)
+    floppiness: 3.6,   // Hz of the springy joints: lower = floppier (1 = limp noodle, 6 = stiff)
     bounce: 0.35,      // spring damping: lower = more wobble after a knock
-    maxBend: 0.55,     // most any one joint can fold (radians, ~30°) so bends stay smooth
+    maxBend: 0.42,     // most any one joint can fold (radians, ~24°) so bends stay smooth
     squirm: 1,         // how lively the occasional squirm is (0 = never squirm)
     fallDrag: 1.4,     // air drag while falling: higher = slower, floatier fall
     grabSize: 1.75,    // how much bigger a grabbed piece gets
     throwSpeed: 900,   // fling faster than this (pixels/sec) and it flies off and disappears
+    trailSeconds: 6,   // how long a thrown one's smear stays on screen
   };
 
   // ---------- canvas ----------
@@ -347,20 +342,20 @@ const GALLERY = [
   // ---------- drawing ----------
   // ---------- drawing ----------
   // WebGL: each piece is a strip of triangles over its image, bent smoothly by the slices' positions
-  let prog, buf, uRes, uOff, uShadow, aPos, aUV;
+  let prog, buf, uRes, uOff, uAlpha, aPos, aUV;
   if (gl) {
     const sh = (type, src) => { const o = gl.createShader(type); gl.shaderSource(o, src); gl.compileShader(o); return o; };
     prog = gl.createProgram();
     gl.attachShader(prog, sh(gl.VERTEX_SHADER, `attribute vec2 aPos; attribute vec2 aUV; uniform vec2 uRes; uniform vec2 uOff; varying vec2 vUV;
       void main(){ vec2 p = (aPos + uOff) / uRes * 2.0 - 1.0; gl_Position = vec4(p.x, -p.y, 0.0, 1.0); vUV = aUV; }`));
-    gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `precision mediump float; uniform sampler2D uTex; uniform float uShadow; varying vec2 vUV;
-      void main(){ vec4 c = texture2D(uTex, vUV); gl_FragColor = uShadow > 0.0 ? vec4(0.0, 0.0, 0.0, c.a * uShadow) : c; }`));
+    gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, `precision mediump float; uniform sampler2D uTex; uniform float uAlpha; varying vec2 vUV;
+      void main(){ gl_FragColor = texture2D(uTex, vUV) * uAlpha; }`));
     gl.linkProgram(prog); gl.useProgram(prog);
     buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     aPos = gl.getAttribLocation(prog, 'aPos'); aUV = gl.getAttribLocation(prog, 'aUV');
     gl.enableVertexAttribArray(aPos); gl.enableVertexAttribArray(aUV);
     gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 16, 0); gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 16, 8);
-    uRes = gl.getUniformLocation(prog, 'uRes'); uOff = gl.getUniformLocation(prog, 'uOff'); uShadow = gl.getUniformLocation(prog, 'uShadow');
+    uRes = gl.getUniformLocation(prog, 'uRes'); uOff = gl.getUniformLocation(prog, 'uOff'); uAlpha = gl.getUniformLocation(prog, 'uAlpha');
     gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
   function makeTexture(img) {
@@ -379,23 +374,71 @@ const GALLERY = [
     return t;
   }
   let verts = new Float32Array(1024);
-  function drawPieceGL(d, shadow) {
-    const sk = d.img, m = sk.mesh, n = m.length;
-    if (verts.length < n * 4) verts = new Float32Array(n * 4);
+  function pieceVerts(d) {
+    const sk = d.img, m = sk.mesh, n = m.length, out = new Float32Array(n * 4);
     const T = d.strips.map(st => { const p = st.body.getPosition(), a = st.body.getAngle(); return { x: p.x * S, y: p.y * S, c: Math.cos(a) * d.k, s: Math.sin(a) * d.k, cx: st.com.x, cy: st.com.y }; });
     for (let i = 0; i < n; i++) {
       const v = m[i], A = T[v.a], Bt = T[v.b];
       const ax = v.x - A.cx, ay = v.y - A.cy, bx = v.x - Bt.cx, by = v.y - Bt.cy;
       const wx = A.x + ax * A.c - ay * A.s, wy = A.y + ax * A.s + ay * A.c;
       const zx = Bt.x + bx * Bt.c - by * Bt.s, zy = Bt.y + bx * Bt.s + by * Bt.c;
-      verts[i * 4] = wx + (zx - wx) * v.wb; verts[i * 4 + 1] = wy + (zy - wy) * v.wb;
-      verts[i * 4 + 2] = v.x / sk.w; verts[i * 4 + 3] = v.y / sk.h;
+      out[i * 4] = wx + (zx - wx) * v.wb; out[i * 4 + 1] = wy + (zy - wy) * v.wb;
+      out[i * 4 + 2] = v.x / sk.w; out[i * 4 + 3] = v.y / sk.h;
     }
-    gl.bindTexture(gl.TEXTURE_2D, sk.tex);
-    gl.bufferData(gl.ARRAY_BUFFER, verts.subarray(0, n * 4), gl.DYNAMIC_DRAW);
-    if (shadow) { gl.uniform1f(uShadow, 0.32); gl.uniform2f(uOff, 6, 18); gl.drawArrays(gl.TRIANGLE_STRIP, 0, n); }
-    gl.uniform1f(uShadow, 0); gl.uniform2f(uOff, 0, 0);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, n);
+    return out;
+  }
+  function drawVerts(tex, v, alpha) {
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.bufferData(gl.ARRAY_BUFFER, v, gl.DYNAMIC_DRAW);
+    gl.uniform1f(uAlpha, alpha);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, v.length / 4);
+  }
+  function drawPieceGL(d) {
+    const v = pieceVerts(d);
+    if (d.thrown) stampTrail(d, v);
+    drawVerts(d.img.tex, v, 1);
+  }
+  // ---------- smear trail for thrown pieces ----------
+  // each frame, the thrown piece's copies (with in-betweens so it's continuous) go into one GPU buffer, then fade out
+  const trail = [];
+  function stampTrail(d, v) {
+    const prev = d.lastStamp, copies = [];
+    if (prev) {
+      let dist = 0; for (let i = 0; i < v.length; i += 4) dist = Math.max(dist, Math.hypot(v[i] - prev[i], v[i + 1] - prev[i + 1]));
+      const steps = Math.min(16, Math.ceil(dist / 8));
+      for (let s2 = 1; s2 < steps; s2++) {
+        const t = s2 / steps, w = new Float32Array(v.length);
+        for (let i = 0; i < v.length; i++) w[i] = (i % 4 < 2) ? prev[i] + (v[i] - prev[i]) * t : v[i];
+        copies.push(w);
+      }
+    }
+    copies.push(v); d.lastStamp = v;
+    // join the copies into one triangle strip (degenerate triangles between them)
+    const n = v.length / 4, total = copies.length * (n + 2);
+    const all = new Float32Array(total * 4); let o = 0;
+    for (const c of copies) {
+      all.set(c.subarray(0, 4), o); o += 4;
+      all.set(c, o); o += c.length;
+      all.set(c.subarray(c.length - 4), o); o += 4;
+    }
+    const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, all, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    trail.push({ tex: d.img.tex, b, count: total, t: performance.now() });
+  }
+  function drawTrail() {
+    if (!trail.length) return;
+    const now = performance.now(), life = FEEL.trailSeconds * 1000;
+    while (trail.length && now - trail[0].t > life) gl.deleteBuffer(trail.shift().b);
+    for (const st of trail) {
+      const age = (now - st.t) / life;
+      gl.bindBuffer(gl.ARRAY_BUFFER, st.b);
+      gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 16, 0); gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 16, 8);
+      gl.bindTexture(gl.TEXTURE_2D, st.tex);
+      gl.uniform1f(uAlpha, 0.45 * (1 - age) * (1 - age));
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, st.count);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 16, 0); gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 16, 8);
   }
   // 2D fallback: pre-cut slices
   function drawPiece2D(d) {
@@ -419,7 +462,7 @@ const GALLERY = [
     while (acc >= STEP && steps < 4) { stepLogic(STEP); world.step(STEP, 6, 3); acc -= STEP; steps++; }
     if (steps === 4) acc = 0;
 
-    if (gl) { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.uniform2f(uRes, W, H); }
+    if (gl) { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.uniform2f(uRes, W, H); gl.uniform2f(uOff, 0, 0); }
     else { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H); }
 
     spawnTimer += 16.7;
@@ -431,8 +474,9 @@ const GALLERY = [
       if (y > H + 600 || (d.thrown && (x < -500 || x > W + 500 || y > H + 400 || y < -2500))) removeDick(d);
     }
 
-    for (const d of dicks) if (!d.held) gl ? drawPieceGL(d, false) : drawPiece2D(d);
-    if (held) gl ? drawPieceGL(held, true) : drawPiece2D(held);
+    if (gl) drawTrail();
+    for (const d of dicks) if (!d.held) gl ? drawPieceGL(d) : drawPiece2D(d);
+    if (held) gl ? drawPieceGL(held) : drawPiece2D(held);
 
     if (dbg) {
       if (dbg.canvas.width !== canvas.width) { dbg.canvas.width = canvas.width; dbg.canvas.height = canvas.height; }
@@ -588,29 +632,43 @@ const GALLERY = [
   }
 
 
-  // ---------- background gallery ----------
+  // ---------- background gallery: one continuous reel, left to right ----------
   (function gallery() {
-    if (!GALLERY.length) { document.getElementById('gallery').style.display = 'none'; return; }
+    const box = document.getElementById('gallery');
+    if (!GALLERY.length) { box.style.display = 'none'; return; }
     const order = [...GALLERY].sort(() => Math.random() - 0.5);
-    const slides = [...document.querySelectorAll('#gallery .slide')];
-    let i = 0, cur = 0;
-    function show(src) {
-      const next = slides[1 - cur];
-      next.querySelector('.bg').style.backgroundImage = next.querySelector('.fg').style.backgroundImage = `url("${src}")`;
-      next.classList.remove('on'); void next.offsetWidth; next.classList.add('on');
-      slides[cur].classList.remove('on'); cur = 1 - cur;
+    const reel = []; // { el, x, w }, ordered right-most first
+    let speed = 0, lastT = performance.now();
+    const widthOf = r => r.el.naturalWidth / r.el.naturalHeight * innerHeight;
+    function add(el) {
+      // join on the left end of the reel
+      const w = el.naturalWidth / el.naturalHeight * innerHeight;
+      const left = reel.length ? Math.min(...reel.map(r => r.x)) : innerWidth;
+      reel.push({ el, x: left - w, w });
+      box.appendChild(el);
+      const avg = reel.reduce((a, r) => a + r.w, 0) / reel.length;
+      speed = avg / GALLERY_SECONDS;
     }
-    function step() {
-      const src = order[i++ % order.length];
-      const im = new Image();
-      im.onload = () => { show(src); setTimeout(step, GALLERY_SECONDS * 1000); };
-      im.onerror = () => setTimeout(step, 100);
-      im.src = src;
-      new Image().src = order[i % order.length]; // warm up the next one
+    // load in order; each joins the reel as soon as it's ready
+    (async () => { for (const src of order) await new Promise(res => { const im = new Image(); im.alt = ''; im.decoding = 'async'; im.onload = () => { add(im); res(); }; im.onerror = res; im.src = src; }); })();
+    function tick(t) {
+      const dt = Math.min(0.1, (t - lastT) / 1000); lastT = t;
+      if (reel.length) {
+        for (const r of reel) r.x += speed * dt;
+        // anything that has slid off the right edge goes back to the left end (only once the reel is wider than the screen)
+        const total = reel.reduce((a, r) => a + r.w, 0);
+        if (total > innerWidth + 50) for (const r of reel) if (r.x > innerWidth) { r.x = Math.min(...reel.map(q => q.x)) - r.w; }
+        for (const r of reel) r.el.style.transform = `translate3d(${r.x.toFixed(1)}px,0,0)`;
+      }
+      requestAnimationFrame(tick);
     }
-    step();
+    addEventListener('resize', () => {
+      // keep the right-most image where it is and re-pack the rest at the new height
+      const sorted = reel.slice().sort((a, b) => b.x - a.x); let x = null;
+      for (const r of sorted) { r.w = widthOf(r); r.x = x === null ? r.x : x - r.w; x = r.x; }
+    });
+    requestAnimationFrame(tick);
   })();
-
 
   function loadCutouts() {
     const list = CUTOUTS.length ? CUTOUTS : ['favicon.svg'];

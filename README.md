@@ -7,8 +7,8 @@ A single-page physics toy. No build step: `index.html`, the physics library in `
 - Cut-outs fall from the top and pile up. They're floppy: each one is a chain of jointed slices (traced automatically from the image's outline), drawn as one smoothly bending image.
 - Now and then a piece squirms.
 - Grab one to pull it around — it grows and comes "closer to camera", shoving the others aside.
-- Fling one hard and it flies off and disappears.
-- Behind everything, the gallery images cross-fade, about 3 seconds each, in random order.
+- Fling one hard and it flies off, leaving a smear across the screen that fades over 6 seconds.
+- Behind everything, the gallery images scroll past as one continuous reel, left to right, in random order.
 
 ## Adding cut-outs
 
@@ -28,7 +28,7 @@ To take one out of the pile, delete its line from `CUTOUTS`.
 1. Export JPG, about **1600px** on the longest side, quality ~78 (100–200 KB).
 2. Put it in `images/gallery/`.
 3. In `index.html`, find `const GALLERY` and add a line: `"images/gallery/new-one.jpg",`
-4. Change how long each shows with `GALLERY_SECONDS`.
+4. Change the reel speed with `GALLERY_SECONDS` (roughly how long each image takes to pass).
 
 ## Tweaking the feel
 
@@ -36,13 +36,14 @@ Near the top of the script, `const FEEL = { ... }`:
 
 | Setting | What it does |
 |---|---|
-| `floppiness` | Spring stiffness of the joints. Lower = floppier (1 is a limp noodle, 6 is stiff). |
+| `floppiness` | Spring stiffness of the joints. Lower = floppier (1 is a limp noodle, 6 is stiff; currently 3.6). |
 | `bounce` | Lower = more wobble after a knock. |
 | `maxBend` | How far one joint can fold (radians). |
 | `squirm` | How lively the squirming is. 0 turns it off. |
 | `fallDrag` | Higher = slower, floatier fall. |
 | `grabSize` | How much bigger a grabbed piece gets. |
 | `throwSpeed` | How hard you have to fling to throw one away. |
+| `trailSeconds` | How long a thrown one's smear stays on screen. |
 
 Other things: page colours are `--bg1`, `--bg2`, `--accent` at the top of the `<style>`; how fast new ones drop is `spawnInterval()`; how full the pile gets is `capacity()`.
 
