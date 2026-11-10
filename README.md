@@ -8,7 +8,7 @@ A single-page physics toy. No build step: `index.html`, the physics library in `
 - Now and then a piece squirms.
 - Grab one to pull it around — it grows and comes "closer to camera", shoving the others aside.
 - Fling one hard and it flies off, leaving a wet, drippy slime streak across the screen that dries up over 6 seconds.
-- Sound effects (made in code, no files): a rubbery squelch when you grab one, a plop when you let go, a whoosh and slide-whistle when you throw, and squishy slaps when they hit each other. The **Sound** button mutes it (remembered per browser). Sound starts after the first tap — browsers require that.
+- Sound effects (made in code, no files): a wet squelch when you grab one, a soft plap when you let go, a gloopy flapping schlorp when you throw, and fleshy wet slaps when they hit each other. The **Sound** button mutes it (remembered per browser). Sound starts after the first tap — browsers require that.
 - Behind everything, the gallery images scroll past as one continuous reel, left to right, in random order.
 
 ## Adding cut-outs

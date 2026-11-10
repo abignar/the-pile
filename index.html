@@ -159,38 +159,84 @@ const GALLERY = [
       f.type = filterType; f.Q.value = q; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
       env(g, t, 0.01, peak, dur); n.connect(f); f.connect(g); g.connect(master); n.start(t, Math.random() * 0.5); n.stop(t + dur + 0.02);
     }
+    // ---- wet, fleshy building blocks ----
+    // a bubble: a short sine chirp that rises fast (that's what a popping bubble sounds like)
+    function bubble(t, f, peak) {
+      const o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine';
+      o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * (1.8 + Math.random()), t + 0.045);
+      env(g, t, 0.004, peak, 0.06); o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.08);
+    }
+    // squelch: noise through a resonant filter whose pitch jitters around (gooey), optionally flapping
+    function squelch(t, dur, f0, f1, peak, flap = 0) {
+      const n = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+      n.buffer = noiseBuf; f.type = 'bandpass'; f.Q.value = 7;
+      const N = 24, curve = new Float32Array(N);
+      for (let i = 0; i < N; i++) { const base = f0 * Math.pow(f1 / f0, i / (N - 1)); curve[i] = base * (0.6 + Math.random() * 0.9); }
+      f.frequency.setValueCurveAtTime(curve, t, dur);
+      env(g, t, 0.015, peak, dur);
+      let out = g;
+      if (flap) { // wobble the volume, like loose flesh flapping
+        const am = ac.createGain(), l = ac.createOscillator(), lg = ac.createGain();
+        am.gain.value = 0.55; l.frequency.value = flap; lg.gain.value = 0.45; l.connect(lg); lg.connect(am.gain); l.start(t); l.stop(t + dur + 0.05);
+        g.connect(am); out = am;
+      }
+      n.connect(f); f.connect(g); out.connect(master); n.start(t, Math.random() * 0.5); n.stop(t + dur + 0.05);
+    }
+    // goo: a short muffled wet splat
+    function goo(t, f, dur, peak) {
+      const n = ac.createBufferSource(), lp = ac.createBiquadFilter(), pk = ac.createBiquadFilter(), g = ac.createGain();
+      n.buffer = noiseBuf; lp.type = 'lowpass'; lp.frequency.setValueAtTime(f * 1.6, t); lp.frequency.exponentialRampToValueAtTime(f * 0.3, t + dur);
+      pk.type = 'peaking'; pk.frequency.value = f * 0.6; pk.Q.value = 3; pk.gain.value = 10;
+      env(g, t, 0.003, peak, dur); n.connect(lp); lp.connect(pk); pk.connect(g); g.connect(master); n.start(t, Math.random() * 0.5); n.stop(t + dur + 0.03);
+    }
+    // thump: a soft low body hit
+    function thump(t, f, dur, peak) {
+      const o = ac.createOscillator(), g = ac.createGain(); o.type = 'sine';
+      o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.45, t + dur);
+      env(g, t, 0.004, peak, dur); o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+    }
+    // smack: the sharp skin-on-skin crack at the start of a slap
+    function smack(t, peak) {
+      const n = ac.createBufferSource(), hp = ac.createBiquadFilter(), g = ac.createGain();
+      n.buffer = noiseBuf; hp.type = 'bandpass'; hp.frequency.value = 2400 + Math.random() * 900; hp.Q.value = 0.9;
+      env(g, t, 0.001, peak, 0.035); n.connect(hp); hp.connect(g); g.connect(master); n.start(t, Math.random() * 0.5); n.stop(t + 0.05);
+    }
     return {
       init,
       get on() { return on; },
       get plays() { return plays; },
       toggle() { on = !on; try { localStorage.setItem('pile-sound', on ? 'on' : 'off'); } catch (e) {} if (master) master.gain.value = on ? SOUND.volume : 0; return on; },
-      // grab: rubbery boing + wet squelch (bigger pieces sound lower)
+      // grab: a wet squelch — wobbling gooey noise, bubbles and a soft fleshy thump
       grab(size = 1) {
         if (!ready()) return; const t = ac.currentTime, p = 1 / Math.sqrt(size);
-        tone('triangle', 170 * p, 420 * p, 0.32, 0.45, t, 14);
-        tone('sine', 90 * p, 60 * p, 0.18, 0.35, t);
-        noise('bandpass', 2200, 500, 3.5, 0.16, 0.5, t + 0.01);
+        squelch(t, 0.26, 280 * p, 1700 * p, 1.0);
+        thump(t, 120 * p, 0.14, 0.7);
+        for (let i = 0; i < 4; i++) bubble(t + 0.03 + Math.random() * 0.17, (320 + Math.random() * 600) * p, 0.18);
       },
-      // let go gently: a little plop
+      // let go gently: a soft wet plap
       drop(size = 1) {
         if (!ready()) return; const t = ac.currentTime, p = 1 / Math.sqrt(size);
-        tone('sine', 320 * p, 120 * p, 0.12, 0.3, t);
-        noise('lowpass', 1400, 300, 1, 0.08, 0.2, t);
+        thump(t, 100 * p, 0.12, 0.45);
+        goo(t, 1100 * p, 0.09, 0.35);
+        bubble(t + 0.02, 420 * p, 0.14); bubble(t + 0.07, 640 * p, 0.1);
       },
-      // throw: whoosh + slide whistle
+      // throw: a long gloopy schlorp that flaps as it goes
       throw(speed = 1) {
-        if (!ready()) return; const t = ac.currentTime;
-        noise('bandpass', 400, 2600, 1.2, 0.45, 0.55 * Math.min(1.3, speed), t);
-        tone('sine', 520, 1900, 0.42, 0.22, t + 0.03, 9);
+        if (!ready()) return; const t = ac.currentTime, k = Math.min(1.3, speed);
+        squelch(t, 0.42, 220, 2300, 0.75 * k, 17);
+        goo(t, 700, 0.3, 0.3 * k);
+        for (let i = 0; i < 5; i++) bubble(t + 0.18 + Math.random() * 0.25, 350 + Math.random() * 700, 0.16);
       },
-      // two pieces (or a piece and the floor) slapping together
+      // two pieces hitting: skin-on-skin smack, meaty thud, a little splash
       bump(strength, size = 1) {
         if (!ready()) return; const now = performance.now();
         if (now - lastBump < 90) return; lastBump = now; plays++;
-        const t = ac.currentTime, v = Math.min(1, strength) * SOUND.bumpVolume, p = (0.8 + Math.random() * 0.4) / Math.sqrt(size);
-        tone('sine', 150 * p, 55 * p, 0.14, 0.5 * v, t);
-        noise('lowpass', 1800 * p, 250, 0.8, 0.1, 0.55 * v, t);
-        if (strength > 0.5) noise('bandpass', 900 * p, 400, 4, 0.09, 0.35 * v, t + 0.01); // extra squish on big hits
+        const t = ac.currentTime, v = Math.min(1, strength) * SOUND.bumpVolume, p = (0.85 + Math.random() * 0.3) / Math.sqrt(size);
+        smack(t, 0.7 * v + 0.04);
+        thump(t, 95 * p, 0.13, 0.9 * v + 0.06);
+        goo(t, 900 * p, 0.08, 0.6 * v + 0.04);
+        if (strength > 0.3) bubble(t + 0.03 + Math.random() * 0.04, (380 + Math.random() * 400) * p, 0.2 * v + 0.05);
+        if (strength > 0.6) squelch(t + 0.02, 0.12, 400 * p, 1200 * p, 0.35 * v);
       },
     };
   })();
