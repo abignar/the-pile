@@ -133,9 +133,9 @@ const GALLERY = [
   // SOUND — all made in code (Web Audio), nothing to download.
   // Browsers only allow sound after the first tap/click on the page.
   // ================================================================
-  const SOUND = { volume: 0.7, bumpVolume: 0.5 };
+  const SOUND = { volume: 0.7, bumpVolume: 0.5, moanVolume: 0.8 };
   const sfx = (() => {
-    let ac = null, master = null, noiseBuf = null, on = true, lastBump = 0, plays = 0;
+    let ac = null, master = null, noiseBuf = null, on = true, lastBump = 0, plays = 0, lastMoan = 0;
     try { on = localStorage.getItem('pile-sound') !== 'off'; } catch (e) {}
     function init() {
       if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
@@ -212,6 +212,32 @@ const GALLERY = [
         squelch(t, 0.26, 280 * p, 1700 * p, 1.0);
         thump(t, 120 * p, 0.14, 0.7);
         for (let i = 0; i < 4; i++) bubble(t + 0.03 + Math.random() * 0.17, (320 + Math.random() * 600) * p, 0.18);
+      },
+      // moan: a sung "mmm-OOOH-ohh" — buzzy voice through vowel-shaped filters, rising then sagging
+      moan(voice = 1) {
+        if (!ready()) return; const now = performance.now();
+        if (now - lastMoan < 450) return; lastMoan = now;
+        const t = ac.currentTime, dur = 0.85 + Math.random() * 0.45, f0 = 150 * voice;
+        const src = ac.createOscillator(); src.type = 'sawtooth';
+        src.frequency.setValueAtTime(f0 * 0.92, t);
+        src.frequency.linearRampToValueAtTime(f0 * (1.35 + Math.random() * 0.25), t + dur * 0.3);
+        src.frequency.linearRampToValueAtTime(f0 * 0.8, t + dur);
+        const vib = ac.createOscillator(), vg = ac.createGain(); vib.frequency.value = 5 + Math.random() * 1.5; vg.gain.value = f0 * 0.035;
+        vib.connect(vg); vg.connect(src.frequency);
+        const out = ac.createGain(); env(out, t, 0.09, 0.55 * SOUND.moanVolume, dur);
+        // formants: "mmm" (closed) opening to "oh"
+        const F = [[260, 450, 9, 1], [1100, 800, 10, 0.45], [2400, 2700, 12, 0.12]];
+        for (const [fa, fb, q, gain] of F) {
+          const bp = ac.createBiquadFilter(), g = ac.createGain(); bp.type = 'bandpass'; bp.Q.value = q;
+          bp.frequency.setValueAtTime(fa, t); bp.frequency.linearRampToValueAtTime(fb, t + dur * 0.25);
+          g.gain.value = gain * 3; src.connect(bp); bp.connect(g); g.connect(out);
+        }
+        // a breathy edge
+        const n = ac.createBufferSource(), nf = ac.createBiquadFilter(), ng = ac.createGain();
+        n.buffer = noiseBuf; nf.type = 'bandpass'; nf.frequency.value = 1500; nf.Q.value = 1.2; env(ng, t, 0.1, 0.06 * SOUND.moanVolume, dur);
+        n.connect(nf); nf.connect(ng); ng.connect(master);
+        out.connect(master);
+        src.start(t); vib.start(t); n.start(t); src.stop(t + dur + 0.05); vib.stop(t + dur + 0.05); n.stop(t + dur + 0.05);
       },
       // let go gently: a soft wet plap
       drop(size = 1) {
@@ -329,7 +355,7 @@ const GALLERY = [
     const spin = (Math.random() - 0.5) * 1.5;
     strips.forEach(st => { st.body.setLinearVelocity(v); st.body.setAngularVelocity(spin); });
     let mass = 0; strips.forEach(st => mass += st.body.getMass());
-    const d = { id: nextId++, mass, strips, joints, img: sk, k, k0: k, scale: 1, target: 1, held: false, thrown: false, wig: 0, phase: Math.random() * 6 };
+    const d = { id: nextId++, voice: (0.7 + Math.random() * 0.7) * Math.sqrt(0.3 / k), mass, strips, joints, img: sk, k, k0: k, scale: 1, target: 1, held: false, thrown: false, wig: 0, phase: Math.random() * 6 };
     strips.forEach(st => st.body.setUserData(d));
     dicks.push(d);
     return d;
@@ -402,6 +428,7 @@ const GALLERY = [
     const b = pick(e.clientX, e.clientY); if (!b) return;
     const d = b.getUserData();
     sfx.grab(d.k / 0.3);
+    sfx.moan(d.voice);
     canvas.setPointerCapture(e.pointerId);
     held = d; grabStrip = b; d.held = true; d.target = FEEL.grabSize; d.wig = 0;
     d.strips.forEach(st => st.body.setAwake(true));
