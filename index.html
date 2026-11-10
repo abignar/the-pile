@@ -169,9 +169,9 @@ const GALLERY = [
     // squelch: noise through a resonant filter whose pitch jitters around (gooey), optionally flapping
     function squelch(t, dur, f0, f1, peak, flap = 0) {
       const n = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
-      n.buffer = noiseBuf; f.type = 'bandpass'; f.Q.value = 7;
+      n.buffer = noiseBuf; f.type = 'bandpass'; f.Q.value = 3.5;
       const N = 24, curve = new Float32Array(N);
-      for (let i = 0; i < N; i++) { const base = f0 * Math.pow(f1 / f0, i / (N - 1)); curve[i] = base * (0.6 + Math.random() * 0.9); }
+      for (let i = 0; i < N; i++) { const base = f0 * Math.pow(f1 / f0, i / (N - 1)); curve[i] = base * (0.8 + Math.random() * 0.4); }
       f.frequency.setValueCurveAtTime(curve, t, dur);
       env(g, t, 0.015, peak, dur);
       let out = g;
@@ -209,34 +209,34 @@ const GALLERY = [
       // grab: a wet squelch — wobbling gooey noise, bubbles and a soft fleshy thump
       grab(size = 1) {
         if (!ready()) return; const t = ac.currentTime, p = 1 / Math.sqrt(size);
-        squelch(t, 0.26, 280 * p, 1700 * p, 1.0);
-        thump(t, 120 * p, 0.14, 0.7);
-        for (let i = 0; i < 4; i++) bubble(t + 0.03 + Math.random() * 0.17, (320 + Math.random() * 600) * p, 0.18);
+        squelch(t, 0.22, 180 * p, 900 * p, 0.8);
+        thump(t, 85 * p, 0.16, 0.7);
       },
       // moan: a sung "mmm-OOOH-ohh" — buzzy voice through vowel-shaped filters, rising then sagging
       moan(voice = 1) {
         if (!ready()) return; const now = performance.now();
         if (now - lastMoan < 450) return; lastMoan = now;
-        const t = ac.currentTime, dur = 0.85 + Math.random() * 0.45, f0 = 150 * voice;
+        const t = ac.currentTime, dur = 1.0 + Math.random() * 0.5, f0 = 118 * voice;
         const src = ac.createOscillator(); src.type = 'sawtooth';
         src.frequency.setValueAtTime(f0 * 0.92, t);
-        src.frequency.linearRampToValueAtTime(f0 * (1.35 + Math.random() * 0.25), t + dur * 0.3);
-        src.frequency.linearRampToValueAtTime(f0 * 0.8, t + dur);
-        const vib = ac.createOscillator(), vg = ac.createGain(); vib.frequency.value = 5 + Math.random() * 1.5; vg.gain.value = f0 * 0.035;
+        src.frequency.linearRampToValueAtTime(f0 * (1.12 + Math.random() * 0.1), t + dur * 0.35);
+        src.frequency.linearRampToValueAtTime(f0 * 0.86, t + dur);
+        const vib = ac.createOscillator(), vg = ac.createGain(); vib.frequency.value = 4 + Math.random(); vg.gain.value = f0 * 0.015;
         vib.connect(vg); vg.connect(src.frequency);
-        const out = ac.createGain(); env(out, t, 0.09, 0.55 * SOUND.moanVolume, dur);
+        const soft = ac.createBiquadFilter(); soft.type = 'lowpass'; soft.frequency.value = 1800; soft.Q.value = 0.5;
+        const out = ac.createGain(); env(out, t, 0.14, 0.5 * SOUND.moanVolume, dur);
         // formants: "mmm" (closed) opening to "oh"
         const F = [[260, 450, 9, 1], [1100, 800, 10, 0.45], [2400, 2700, 12, 0.12]];
         for (const [fa, fb, q, gain] of F) {
           const bp = ac.createBiquadFilter(), g = ac.createGain(); bp.type = 'bandpass'; bp.Q.value = q;
           bp.frequency.setValueAtTime(fa, t); bp.frequency.linearRampToValueAtTime(fb, t + dur * 0.25);
-          g.gain.value = gain * 3; src.connect(bp); bp.connect(g); g.connect(out);
+          g.gain.value = gain * 3; src.connect(bp); bp.connect(g); g.connect(soft);
         }
         // a breathy edge
         const n = ac.createBufferSource(), nf = ac.createBiquadFilter(), ng = ac.createGain();
-        n.buffer = noiseBuf; nf.type = 'bandpass'; nf.frequency.value = 1500; nf.Q.value = 1.2; env(ng, t, 0.1, 0.06 * SOUND.moanVolume, dur);
+        n.buffer = noiseBuf; nf.type = 'bandpass'; nf.frequency.value = 1200; nf.Q.value = 0.9; env(ng, t, 0.12, 0.16 * SOUND.moanVolume, dur);
         n.connect(nf); nf.connect(ng); ng.connect(master);
-        out.connect(master);
+        soft.connect(out); out.connect(master);
         src.start(t); vib.start(t); n.start(t); src.stop(t + dur + 0.05); vib.stop(t + dur + 0.05); n.stop(t + dur + 0.05);
       },
       // let go gently: a soft wet plap
@@ -244,14 +244,12 @@ const GALLERY = [
         if (!ready()) return; const t = ac.currentTime, p = 1 / Math.sqrt(size);
         thump(t, 100 * p, 0.12, 0.45);
         goo(t, 1100 * p, 0.09, 0.35);
-        bubble(t + 0.02, 420 * p, 0.14); bubble(t + 0.07, 640 * p, 0.1);
       },
       // throw: a long gloopy schlorp that flaps as it goes
       throw(speed = 1) {
         if (!ready()) return; const t = ac.currentTime, k = Math.min(1.3, speed);
-        squelch(t, 0.42, 220, 2300, 0.75 * k, 17);
-        goo(t, 700, 0.3, 0.3 * k);
-        for (let i = 0; i < 5; i++) bubble(t + 0.18 + Math.random() * 0.25, 350 + Math.random() * 700, 0.16);
+        squelch(t, 0.38, 160, 1300, 0.65 * k, 9);
+        goo(t, 600, 0.3, 0.35 * k);
       },
       // two pieces hitting: skin-on-skin smack, meaty thud, a little splash
       bump(strength, size = 1) {
@@ -261,7 +259,6 @@ const GALLERY = [
         smack(t, 0.7 * v + 0.04);
         thump(t, 95 * p, 0.13, 0.9 * v + 0.06);
         goo(t, 900 * p, 0.08, 0.6 * v + 0.04);
-        if (strength > 0.3) bubble(t + 0.03 + Math.random() * 0.04, (380 + Math.random() * 400) * p, 0.2 * v + 0.05);
         if (strength > 0.6) squelch(t + 0.02, 0.12, 400 * p, 1200 * p, 0.35 * v);
       },
     };
