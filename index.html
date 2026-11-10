@@ -48,6 +48,7 @@
 <canvas id="wet"></canvas>
 <div class="bar">
   <button id="rain" class="hot">Make it rain</button>
+  <button id="sound">Sound: on</button>
   <button id="clear">Clear</button>
 </div>
 <div class="drop" id="drop">Drop your cut-outs</div>
@@ -127,6 +128,88 @@ const GALLERY = [
 
   // ---------- world ----------
   const world = new pl.World({ gravity: Vec2(0, 14) });
+
+  // ================================================================
+  // SOUND — all made in code (Web Audio), nothing to download.
+  // Browsers only allow sound after the first tap/click on the page.
+  // ================================================================
+  const SOUND = { volume: 0.7, bumpVolume: 0.5 };
+  const sfx = (() => {
+    let ac = null, master = null, noiseBuf = null, on = true, lastBump = 0, plays = 0;
+    try { on = localStorage.getItem('pile-sound') !== 'off'; } catch (e) {}
+    function init() {
+      if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      ac = new AC(); master = ac.createGain(); master.gain.value = on ? SOUND.volume : 0;
+      const comp = ac.createDynamicsCompressor(); master.connect(comp); comp.connect(ac.destination);
+      noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+      const ch = noiseBuf.getChannelData(0); for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
+    }
+    const ready = () => ac && on && ac.state === 'running';
+    const env = (g, t, a, peak, dur) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); };
+    function tone(type, f0, f1, dur, peak, t = ac.currentTime, vib = 0) {
+      const o = ac.createOscillator(), g = ac.createGain(); o.type = type;
+      o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+      if (vib) { const l = ac.createOscillator(), lg = ac.createGain(); l.frequency.value = vib; lg.gain.value = f0 * 0.08; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + dur); }
+      env(g, t, 0.008, peak, dur); o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+    }
+    function noise(filterType, f0, f1, q, dur, peak, t = ac.currentTime) {
+      const n = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+      n.buffer = noiseBuf; n.playbackRate.value = 0.7 + Math.random() * 0.6;
+      f.type = filterType; f.Q.value = q; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      env(g, t, 0.01, peak, dur); n.connect(f); f.connect(g); g.connect(master); n.start(t, Math.random() * 0.5); n.stop(t + dur + 0.02);
+    }
+    return {
+      init,
+      get on() { return on; },
+      get plays() { return plays; },
+      toggle() { on = !on; try { localStorage.setItem('pile-sound', on ? 'on' : 'off'); } catch (e) {} if (master) master.gain.value = on ? SOUND.volume : 0; return on; },
+      // grab: rubbery boing + wet squelch (bigger pieces sound lower)
+      grab(size = 1) {
+        if (!ready()) return; const t = ac.currentTime, p = 1 / Math.sqrt(size);
+        tone('triangle', 170 * p, 420 * p, 0.32, 0.45, t, 14);
+        tone('sine', 90 * p, 60 * p, 0.18, 0.35, t);
+        noise('bandpass', 2200, 500, 3.5, 0.16, 0.5, t + 0.01);
+      },
+      // let go gently: a little plop
+      drop(size = 1) {
+        if (!ready()) return; const t = ac.currentTime, p = 1 / Math.sqrt(size);
+        tone('sine', 320 * p, 120 * p, 0.12, 0.3, t);
+        noise('lowpass', 1400, 300, 1, 0.08, 0.2, t);
+      },
+      // throw: whoosh + slide whistle
+      throw(speed = 1) {
+        if (!ready()) return; const t = ac.currentTime;
+        noise('bandpass', 400, 2600, 1.2, 0.45, 0.55 * Math.min(1.3, speed), t);
+        tone('sine', 520, 1900, 0.42, 0.22, t + 0.03, 9);
+      },
+      // two pieces (or a piece and the floor) slapping together
+      bump(strength, size = 1) {
+        if (!ready()) return; const now = performance.now();
+        if (now - lastBump < 90) return; lastBump = now; plays++;
+        const t = ac.currentTime, v = Math.min(1, strength) * SOUND.bumpVolume, p = (0.8 + Math.random() * 0.4) / Math.sqrt(size);
+        tone('sine', 150 * p, 55 * p, 0.14, 0.5 * v, t);
+        noise('lowpass', 1800 * p, 250, 0.8, 0.1, 0.55 * v, t);
+        if (strength > 0.5) noise('bandpass', 900 * p, 400, 4, 0.09, 0.35 * v, t + 0.01); // extra squish on big hits
+      },
+    };
+  })();
+  // collisions: when two things first touch, slap in proportion to how fast they came together
+  world.on('begin-contact', contact => {
+    const A = contact.getFixtureA().getBody(), B = contact.getFixtureB().getBody();
+    const da = A.getUserData(), db = B.getUserData();
+    if (!da && !db) return;
+    if (da && db && da === db) return;
+    if ((da && da.thrown) || (db && db.thrown)) return;
+    if ((da && da.wig > 0) || (db && db.wig > 0)) return; // squirming isn't a hit
+    const va = A.getLinearVelocity(), vb = B.getLinearVelocity();
+    const dv = Math.hypot(va.x - vb.x, va.y - vb.y); // m/s
+    if (dv < 2.2) return;
+    const d = (da && db) ? (A.getMass() > B.getMass() ? da : db) : (da || db), now = performance.now();
+    if (d.lastBump && now - d.lastBump < 300) return; d.lastBump = now;
+    sfx.bump((dv - 2.2) / 7, d.k / 0.3);
+  });
+
   const ground = world.createBody();
   let wallFixtures = [];
   function buildWalls() {
@@ -269,8 +352,10 @@ const GALLERY = [
   }
   canvas.addEventListener('pointerdown', e => {
     pointer.x = e.clientX; pointer.y = e.clientY; pointer.hist = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
+    sfx.init();
     const b = pick(e.clientX, e.clientY); if (!b) return;
     const d = b.getUserData();
+    sfx.grab(d.k / 0.3);
     canvas.setPointerCapture(e.pointerId);
     held = d; grabStrip = b; d.held = true; d.target = FEEL.grabSize; d.wig = 0;
     d.strips.forEach(st => st.body.setAwake(true));
@@ -302,7 +387,9 @@ const GALLERY = [
     if (grabStrip) { const bv = grabStrip.getLinearVelocity(); if (Math.hypot(bv.x, bv.y) * S > Math.hypot(vx, vy)) { vx = bv.x * S; vy = bv.y * S; } }
     const d = held;
     release();
+    if (Math.hypot(vx, vy) <= FEEL.throwSpeed) sfx.drop(d.k / 0.3);
     if (Math.hypot(vx, vy) > FEEL.throwSpeed) {
+      sfx.throw(Math.hypot(vx, vy) / 2500);
       d.thrown = true; d.target = 1;
       setMask(d, 0); // flies through everything
       d.strips.forEach(st => { st.body.setLinearDamping(0); st.body.setLinearVelocity(Vec2(vx * 1.4 / S, vy * 1.4 / S)); st.body.setAngularVelocity((Math.random() - 0.5) * 8); });
@@ -555,6 +642,10 @@ const GALLERY = [
     if (!n) return toast('The pile can’t take any more');
     for (let i = 0; i < n; i++) setTimeout(() => dropOne(2), i * 90);
   };
+  const soundBtn = document.getElementById('sound');
+  soundBtn.textContent = 'Sound: ' + (sfx.on ? 'on' : 'off');
+  soundBtn.onclick = () => { sfx.init(); soundBtn.textContent = 'Sound: ' + (sfx.toggle() ? 'on' : 'off'); };
+  document.querySelector('.bar').addEventListener('pointerdown', () => sfx.init());
   document.getElementById('clear').onclick = () => { [...dicks].forEach(removeDick); };
 
   // drag-and-drop test images (local only, nothing uploads)
@@ -746,7 +837,7 @@ const GALLERY = [
     for (let i = 0; i < 4; i++) setTimeout(() => dropOne(), 200 + i * 500);
     requestAnimationFrame(t => { last = t; frame(t); });
   });
-  window.__pile = { dicks, world, dropOne, S }; // for testing
+  window.__pile = { dicks, world, dropOne, S, sfx }; // for testing
 })();
 </script>
 </body>
