@@ -11,7 +11,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="canonical" href="https://cockpile.com/">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=DM+Sans:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=DM+Sans:wght@500;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 <script src="js/planck.min.js"></script>
 <style>
   :root{
@@ -72,6 +72,7 @@
   <button id="pong" class="pile-only">Play Pong</button>
   <button id="stack" class="pile-only">Stack 'Em</button>
   <button id="snake" class="pile-only">Snake</button>
+  <button id="quest" class="pile-only">Cock Quest</button>
   <button id="back" class="game-only">Back to the pile</button>
   <button id="sound">Sound: on</button>
   <button id="clear" class="pile-only">Clear</button>
@@ -1095,6 +1096,7 @@ const GALLERY = [
   const STEP_MS = () => frameDt;
   const STEP = 1 / 60;
   function frame(now) {
+    if (window.__rpgOpen) { last = now; requestAnimationFrame(frame); return; } // paused while Cock Quest is open
     frameDt = Math.min(100, now - last); acc += Math.min(0.1, (now - last) / 1000); last = now;
     let steps = 0;
     while (acc >= STEP && steps < 4) { stepLogic(STEP); gameStep(STEP); world.step(STEP, 6, 3); applyHits(); acc -= STEP; steps++; }
@@ -1359,5 +1361,7 @@ const GALLERY = [
   window.__pile = { dicks, world, dropOne, S, sfx, game, bk, sn }; // for testing
 })();
 </script>
+<script src="js/rpg.js"></script>
+<script>document.getElementById('quest').onclick = () => window.CockQuest && window.CockQuest.open();</script>
 </body>
 </html>

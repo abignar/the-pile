@@ -12,6 +12,12 @@ A single-page physics toy. No build step: `index.html`, the physics library in `
 - **Play Pong** button: the pile clears and they drop one at a time. Slide the paddle (mouse, finger or arrow keys) to bounce them; knock one off the top or sides for a point, let one fall past the bottom and you lose a life. Three lives, and it speeds up as your score climbs. In `index.html`, `PADDLE` sets the paddle size and `gameStep()` sets how fast they come.
 - **Stack 'Em** button: a falling-blocks game where each shape is made of one kind of cock (one cut-out per shape). Clear a line and those cocks burst out as floppy pieces with slime trails. Keys: ← → move, ↑ rotate, ↓ soft drop, space hard drop. On phones: the on-screen pad, or drag to move, tap to rotate, flick down to drop. (Named Stack 'Em rather than after the famous one, whose name is trademarked.)
 - **Snake** button: the Penisaurus Rex skeleton is the snake — skull for a head, pelvis and tail at the back — and it grows another section of ribs for every cock it eats. Arrow keys / WASD, swipe on phones, or the on-screen arrows. Speeds up as it grows. The sprites are cut from `images/penisaurus-rex.webp` into `images/snake/` (`head`, `ribs`, `tail`).
+- **Cock Quest** button: a little handheld-style monster-battling RPG (`js/rpg.js`).
+  - Pick your cock from the cut-outs. Every species gets random stats that add up to the same total, and four moves.
+  - Wander a generated 8-bit world in rings: Meadow (L2–5) → Forest (L6–10) → Desert (L11–15) → Frost (L16–21) → Badlands (L22–26). Tall grass has wild cocks.
+  - Battle (FIGHT / LUBE / RUN / STATS), earn XP, level up. Pink heart pads heal you; LUBE heals in or out of battle.
+  - Four crowned BOSS cocks wait at the far ends of the paths (L22, 26, 30, 35). Beat all four to become COCK CHAMPION.
+  - Controls: the on-screen D-pad, A, B, START — or arrows/WASD, Z (A), X (B), Enter (Start), Esc to close. Progress saves in the browser.
 - Behind everything, the gallery images scroll past as one continuous reel, left to right, in random order.
 
 ## Adding cut-outs
