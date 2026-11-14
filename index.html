@@ -44,6 +44,12 @@
   .hud #lives{color:var(--accent);letter-spacing:3px;font-size:20px}
   .over{position:fixed;inset:0;z-index:4;display:none;align-items:center;justify-content:center;background:rgba(58,31,43,.35)}
   .over.on{display:flex}
+  body:not(.blocks) .blocks-only{display:none !important}
+  body.blocks .pong-only{display:none !important}
+  .pad{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(64px + env(safe-area-inset-bottom));z-index:2;display:flex;gap:10px}
+  .pad button{width:58px;height:58px;font:700 24px system-ui;color:var(--ink);background:var(--chip);border:2px solid var(--ink);border-radius:16px;box-shadow:2px 2px 0 var(--ink);cursor:pointer;touch-action:manipulation;user-select:none}
+  .pad button:active{transform:translate(2px,2px);box-shadow:0 0 0 var(--ink)}
+  @media (hover:hover) and (pointer:fine){ .pad{display:none !important} }
   .over .card{background:#fff8ef;border:3px solid var(--ink);border-radius:22px;box-shadow:5px 5px 0 var(--ink);padding:26px 30px;text-align:center;max-width:86vw}
   .over h2{font:400 44px "Bagel Fat One",system-ui;color:var(--accent);text-shadow:3px 3px 0 var(--ink);margin-bottom:6px}
   .over p{font:700 18px "DM Sans",system-ui;margin-bottom:18px}
@@ -63,11 +69,15 @@
 <div class="bar">
   <button id="rain" class="hot pile-only">Make it rain</button>
   <button id="pong" class="pile-only">Play Pong</button>
+  <button id="stack" class="pile-only">Stack 'Em</button>
   <button id="back" class="game-only">Back to the pile</button>
   <button id="sound">Sound: on</button>
   <button id="clear" class="pile-only">Clear</button>
 </div>
 <div class="hud game-only" id="hud"><span id="score">0</span><span id="lives"></span></div>
+<div class="pad blocks-only" id="pad">
+  <button data-k="left" aria-label="Left">◀</button><button data-k="rot" aria-label="Rotate">⟳</button><button data-k="right" aria-label="Right">▶</button><button data-k="drop" aria-label="Drop">⤓</button>
+</div>
 <div class="over" id="over"><div class="card"><h2>Game over</h2><p id="final"></p><div class="row"><button id="again" class="hot">Play again</button><button id="quit">Back to the pile</button></div></div></div>
 <div class="drop" id="drop">Drop your cut-outs</div>
 <div class="toast" id="toast"></div>
@@ -301,7 +311,7 @@ const GALLERY = [
   let wallFixtures = [];
   function buildWalls() {
     wallFixtures.forEach(f => ground.destroyFixture(f)); wallFixtures = [];
-    if (game.on) return; // in Pong the floor is gone and the sides are open
+    if (game.on || bk.on) return; // in the games the floor is gone and the sides are open
     const w = W / S, h = H / S, t = 4;
     wallFixtures = [
       ground.createFixture(new Box(w * 1.5, t, Vec2(w / 2, h + t), 0), { friction: 0.9 }),
@@ -315,7 +325,7 @@ const GALLERY = [
     canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
     buildWalls();
     // pull anything outside back in
-    if (game.on) return;
+    if (game.on || bk.on) return;
     for (const d of dicks) {
       if (d.thrown) continue;
       for (const st of d.strips) {
@@ -438,7 +448,7 @@ const GALLERY = [
   function updateHud() { hudScore.textContent = game.score; hudLives.textContent = '♥'.repeat(Math.max(0, game.lives)) + '♡'.repeat(Math.max(0, 3 - game.lives)); }
   function clearPieces() { [...dicks].forEach(removeDick); }
   function startGame() {
-    release(); clearPieces();
+    release(); clearPieces(); if (bk.on) { bk.on = false; document.body.classList.remove('blocks'); }
     game.on = true; game.over = false; game.score = 0; game.lives = 3; game.t = 0; game.spawnT = 0.6; game.hits = [];
     game.px = game.targetX = W / 2; game.pvx = 0;
     document.body.classList.add('game'); overEl.classList.remove('on');
@@ -510,6 +520,166 @@ const GALLERY = [
     wet.restore();
   }
 
+  // ---------- STACK 'EM (falling blocks made of cocks) ----------
+  const SHAPES = {
+    I: [[0,1],[1,1],[2,1],[3,1]], O: [[1,0],[2,0],[1,1],[2,1]], T: [[1,0],[0,1],[1,1],[2,1]],
+    S: [[1,0],[2,0],[0,1],[1,1]], Z: [[0,0],[1,0],[1,1],[2,1]], J: [[0,0],[0,1],[1,1],[2,1]], L: [[2,0],[0,1],[1,1],[2,1]],
+  };
+  const TINT = { I: '#9fd6ff', O: '#ffd86b', T: '#c7b2ff', S: '#b9f0a6', Z: '#ff9ec4', J: '#8fb3ff', L: '#ffb98a' };
+  const COLS = 10, ROWS = 20;
+  const bk = { on: false, over: false, grid: [], cur: null, next: null, tick: 0, lock: 0, score: 0, lines: 0, bag: [], touch: null, tiles: new Map() };
+  const level = () => Math.floor(bk.lines / 8);
+  const fallMs = () => Math.max(90, 750 - level() * 65);
+  function board() {
+    const top = 72, bottom = (matchMedia('(hover:hover) and (pointer:fine)').matches ? 70 : 140);
+    const cell = Math.floor(Math.min((H - top - bottom) / ROWS, (W - 24) / COLS));
+    return { cell, x: Math.round((W - cell * COLS) / 2), y: top };
+  }
+  function nextType() { if (!bk.bag.length) bk.bag = Object.keys(SHAPES).sort(() => Math.random() - 0.5); return bk.bag.pop(); }
+  function newPiece(type) {
+    // each piece is one shape type; every tile shows a cock from the cut-outs
+    const cells = SHAPES[type].map(([x, y]) => ({ x, y, skin: Math.floor(Math.random() * images.length) }));
+    return { type, cells, x: 3, y: -1 };
+  }
+  function fits(p, dx = 0, dy = 0, cells = p.cells) {
+    return cells.every(c => { const x = p.x + c.x + dx, y = p.y + c.y + dy; return x >= 0 && x < COLS && y < ROWS && (y < 0 || !bk.grid[y][x]); });
+  }
+  function rotate(p) {
+    if (p.type === 'O') return;
+    const n = p.type === 'I' ? 4 : 3;
+    const rc = p.cells.map(c => ({ ...c, x: n - 1 - c.y, y: c.x }));
+    for (const k of [0, -1, 1, -2, 2]) if (fits(p, k, 0, rc)) { p.cells = rc; p.x += k; bk.lock = 0; return true; }
+  }
+  function spawnNext() {
+    bk.cur = bk.next || newPiece(nextType()); bk.next = newPiece(nextType());
+    bk.cur.x = 3; bk.cur.y = bk.cur.type === 'I' ? -1 : 0;
+    if (!fits(bk.cur)) { bk.over = true; document.getElementById('final').textContent = `You cleared ${bk.lines} line${bk.lines === 1 ? '' : 's'} — ${bk.score} points.`; overEl.classList.add('on'); sfx.moan(0.55); }
+  }
+  function hudBlocks() { hudScore.textContent = bk.score; hudLives.textContent = `Lines ${bk.lines}`; }
+  function startBlocks() {
+    release(); clearPieces(); if (game.on) { game.on = false; if (game.paddle) { world.destroyBody(game.paddle); game.paddle = null; } }
+    bk.on = true; bk.over = false; bk.score = 0; bk.lines = 0; bk.tick = 0; bk.lock = 0; bk.bag = []; bk.next = null;
+    bk.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    document.body.classList.add('game', 'blocks'); overEl.classList.remove('on');
+    buildWalls(); spawnNext(); hudBlocks();
+  }
+  function endBlocks() {
+    bk.on = false; bk.over = false; overEl.classList.remove('on');
+    document.body.classList.remove('game', 'blocks');
+    clearPieces(); buildWalls();
+    for (let i = 0; i < 4; i++) setTimeout(() => dropOne(), 200 + i * 400);
+  }
+  // cleared tiles burst out as real floppy cocks with slime trails
+  function burst(px, py, n) {
+    for (let i = 0; i < n; i++) {
+      const d = spawn(px[i], py[i]);
+      d.thrown = true; setMask(d, 0);
+      const vx = (Math.random() - 0.5) * 22, vy = -(8 + Math.random() * 12);
+      d.strips.forEach(st => { st.body.setLinearDamping(0); st.body.setLinearVelocity(Vec2(vx, vy)); st.body.setAngularVelocity((Math.random() - 0.5) * 10); });
+    }
+  }
+  function lockPiece() {
+    const p = bk.cur;
+    for (const c of p.cells) { const y = p.y + c.y; if (y < 0) { bk.over = true; continue; } bk.grid[y][p.x + c.x] = { type: p.type, skin: c.skin }; }
+    sfx.drop(1.2);
+    if (bk.over) { document.getElementById('final').textContent = `You cleared ${bk.lines} line${bk.lines === 1 ? '' : 's'} — ${bk.score} points.`; overEl.classList.add('on'); sfx.moan(0.55); return; }
+    // clear full rows
+    const full = []; for (let y = 0; y < ROWS; y++) if (bk.grid[y].every(Boolean)) full.push(y);
+    if (full.length) {
+      const b = board(), xs = [], ys = [];
+      for (const y of full) for (let x = 0; x < COLS; x++) if (Math.random() < 0.45) { xs.push(b.x + (x + 0.5) * b.cell); ys.push(b.y + (y + 0.5) * b.cell); }
+      burst(xs, ys, Math.min(10, xs.length));
+      for (const y of full) { bk.grid.splice(y, 1); bk.grid.unshift(Array(COLS).fill(null)); }
+      bk.lines += full.length; bk.score += [0, 100, 300, 500, 800][full.length] * (level() + 1);
+      sfx.throw(1); sfx.moan(0.8 + Math.random() * 0.6); if (full.length >= 2) setTimeout(() => sfx.moan(0.7 + Math.random() * 0.5), 250);
+      hudBlocks();
+    }
+    spawnNext();
+  }
+  function act(k) {
+    if (!bk.on || bk.over || !bk.cur) return;
+    const p = bk.cur;
+    if (k === 'left' && fits(p, -1)) { p.x--; bk.lock = 0; }
+    if (k === 'right' && fits(p, 1)) { p.x++; bk.lock = 0; }
+    if (k === 'rot') rotate(p);
+    if (k === 'down') { if (fits(p, 0, 1)) { p.y++; bk.score += 1; bk.tick = 0; } }
+    if (k === 'drop') { let n = 0; while (fits(p, 0, 1)) { p.y++; n++; } bk.score += n * 2; sfx.bump(0.8, 1); lockPiece(); hudBlocks(); }
+  }
+  addEventListener('keydown', e => {
+    if (!bk.on) return;
+    const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'rot', ArrowDown: 'down', ' ': 'drop', x: 'rot', z: 'rot' };
+    if (map[e.key]) { e.preventDefault(); act(map[e.key]); }
+  });
+  // phone controls: the on-screen pad (hold to repeat) and gestures on the board
+  document.querySelectorAll('#pad button').forEach(btn => {
+    let rpt = null;
+    const go = () => act(btn.dataset.k);
+    btn.addEventListener('pointerdown', e => { e.preventDefault(); sfx.init(); go(); if (btn.dataset.k === 'left' || btn.dataset.k === 'right') rpt = setTimeout(function r() { go(); rpt = setTimeout(r, 70); }, 220); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => btn.addEventListener(t, () => clearTimeout(rpt)));
+  });
+  function blocksPointer(type, e) {
+    const b = board();
+    if (type === 'down') { bk.touch = { x: e.clientX, y: e.clientY, t: performance.now(), cx: e.clientX, cy: e.clientY, moved: false }; try { canvas.setPointerCapture(e.pointerId); } catch (_) {} return; }
+    const t = bk.touch; if (!t) return;
+    if (type === 'move') {
+      while (e.clientX - t.cx > b.cell * 0.8) { act('right'); t.cx += b.cell * 0.8; t.moved = true; }
+      while (t.cx - e.clientX > b.cell * 0.8) { act('left'); t.cx -= b.cell * 0.8; t.moved = true; }
+      while (e.clientY - t.cy > b.cell) { act('down'); t.cy += b.cell; t.moved = true; }
+      return;
+    }
+    // up: quick tap rotates, quick flick down drops
+    const dt = performance.now() - t.t, dy = e.clientY - t.y, dx = e.clientX - t.x;
+    if (dy > 70 && dt < 260 && Math.abs(dy) > Math.abs(dx)) act('drop');
+    else if (!t.moved && Math.hypot(dx, dy) < 12 && dt < 300) act('rot');
+    bk.touch = null;
+  }
+  // a cock tile: coloured rounded square with the cut-out fitted inside (cached per size)
+  function tile(skin, type, size) {
+    const key = skin + type + size; let t = bk.tiles.get(key); if (t) return t;
+    const px = Math.max(8, Math.round(size * DPR)); t = document.createElement('canvas'); t.width = t.height = px;
+    const c = t.getContext('2d'), r = px * 0.18, pad = px * 0.06;
+    c.fillStyle = TINT[type]; c.strokeStyle = '#3a1f2b'; c.lineWidth = Math.max(1, px * 0.05);
+    c.beginPath(); c.roundRect ? c.roundRect(pad, pad, px - pad * 2, px - pad * 2, r) : c.rect(pad, pad, px - pad * 2, px - pad * 2); c.fill(); c.stroke();
+    const im = images[skin] && images[skin].img;
+    if (im) { const k = (px * 0.86) / Math.max(im.width, im.height); c.drawImage(im, (px - im.width * k) / 2, (px - im.height * k) / 2, im.width * k, im.height * k); }
+    c.fillStyle = 'rgba(255,255,255,.35)'; c.beginPath(); c.roundRect ? c.roundRect(pad * 2, pad * 1.6, px - pad * 4, px * 0.08, px * 0.04) : 0; c.fill();
+    bk.tiles.set(key, t); if (bk.tiles.size > 400) bk.tiles.clear();
+    return t;
+  }
+  function blocksFrame(ms) {
+    if (!bk.on) return;
+    if (!bk.over && bk.cur) {
+      bk.tick += ms;
+      if (bk.tick >= fallMs()) {
+        bk.tick = 0;
+        if (fits(bk.cur, 0, 1)) { bk.cur.y++; bk.lock = 0; }
+        else if ((bk.lock += fallMs()) >= 450 || fallMs() > 450) lockPiece();
+      }
+    }
+    const b = board(), cs = b.cell;
+    wet.save();
+    // board
+    wet.fillStyle = 'rgba(255,248,239,.66)'; wet.strokeStyle = '#3a1f2b'; wet.lineWidth = 3;
+    wet.beginPath(); wet.roundRect ? wet.roundRect(b.x - 6, b.y - 6, cs * COLS + 12, cs * ROWS + 12, 14) : wet.rect(b.x - 6, b.y - 6, cs * COLS + 12, cs * ROWS + 12); wet.fill(); wet.stroke();
+    wet.strokeStyle = 'rgba(58,31,43,.07)'; wet.lineWidth = 1;
+    for (let x = 1; x < COLS; x++) { wet.beginPath(); wet.moveTo(b.x + x * cs, b.y); wet.lineTo(b.x + x * cs, b.y + ROWS * cs); wet.stroke(); }
+    for (let y = 1; y < ROWS; y++) { wet.beginPath(); wet.moveTo(b.x, b.y + y * cs); wet.lineTo(b.x + COLS * cs, b.y + y * cs); wet.stroke(); }
+    const put = (cell, gx, gy, alpha = 1) => { if (gy < 0) return; wet.globalAlpha = alpha; wet.drawImage(tile(cell.skin, cell.type, cs), b.x + gx * cs, b.y + gy * cs, cs, cs); wet.globalAlpha = 1; };
+    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (bk.grid[y][x]) put(bk.grid[y][x], x, y);
+    if (bk.cur && !bk.over) {
+      const p = bk.cur; let gy = 0; while (fits(p, 0, gy + 1)) gy++;
+      for (const c of p.cells) put({ skin: c.skin, type: p.type }, p.x + c.x, p.y + c.y + gy, 0.22); // ghost: where it'll land
+      for (const c of p.cells) put({ skin: c.skin, type: p.type }, p.x + c.x, p.y + c.y);
+    }
+    // next piece, beside the board if there's room
+    if (bk.next && W - (b.x + cs * COLS) > cs * 4.5) {
+      const nx = b.x + cs * COLS + 22, ny = b.y + 8, ns = cs * 0.8;
+      wet.fillStyle = '#3a1f2b'; wet.font = '700 14px "DM Sans", system-ui'; wet.fillText('Next', nx, ny + 4);
+      for (const c of bk.next.cells) wet.drawImage(tile(c.skin, bk.next.type, ns), nx + c.x * ns, ny + 14 + c.y * ns, ns, ns);
+    }
+    wet.restore();
+  }
+
   // ---------- grabbing & throwing ----------
   let held = null, mouseJoint = null, grabStrip = null;
   const pointer = { x: 0, y: 0, hist: [] };
@@ -530,6 +700,7 @@ const GALLERY = [
   canvas.addEventListener('pointerdown', e => {
     pointer.x = e.clientX; pointer.y = e.clientY; pointer.hist = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
     sfx.init();
+    if (bk.on) { blocksPointer('down', e); return; }
     if (game.on) { game.targetX = e.clientX; return; }
     const b = pick(e.clientX, e.clientY); if (!b) return;
     const d = b.getUserData();
@@ -544,6 +715,7 @@ const GALLERY = [
   });
   canvas.addEventListener('pointermove', e => {
     pointer.x = e.clientX; pointer.y = e.clientY;
+    if (bk.on) { blocksPointer('move', e); return; }
     if (game.on) game.targetX = e.clientX;
     pointer.hist.push({ x: e.clientX, y: e.clientY, t: performance.now() });
     if (pointer.hist.length > 8) pointer.hist.shift();
@@ -575,7 +747,7 @@ const GALLERY = [
       d.strips.forEach(st => { st.body.setLinearDamping(0); st.body.setLinearVelocity(Vec2(vx * 1.4 / S, vy * 1.4 / S)); st.body.setAngularVelocity((Math.random() - 0.5) * 8); });
     }
   }
-  canvas.addEventListener('pointerup', endDrag);
+  canvas.addEventListener('pointerup', e => { if (bk.on) return blocksPointer('up', e); endDrag(); });
   canvas.addEventListener('pointercancel', endDrag);
 
   // ---------- per-step logic ----------
@@ -774,10 +946,11 @@ const GALLERY = [
   let dbg = null;
   if (DEBUG) { const dc = document.createElement('canvas'); dc.style.cssText = 'position:fixed;inset:0;z-index:1;pointer-events:none;width:100vw;height:100vh'; document.body.appendChild(dc); dbg = dc.getContext('2d'); }
 
-  let last = performance.now(), acc = 0;
+  let last = performance.now(), acc = 0, frameDt = 16.7;
+  const STEP_MS = () => frameDt;
   const STEP = 1 / 60;
   function frame(now) {
-    acc += Math.min(0.1, (now - last) / 1000); last = now;
+    frameDt = Math.min(100, now - last); acc += Math.min(0.1, (now - last) / 1000); last = now;
     let steps = 0;
     while (acc >= STEP && steps < 4) { stepLogic(STEP); gameStep(STEP); world.step(STEP, 6, 3); applyHits(); acc -= STEP; steps++; }
     if (steps === 4) acc = 0;
@@ -786,7 +959,7 @@ const GALLERY = [
     else { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H); }
 
     spawnTimer += 16.7;
-    if (!game.on && spawnTimer > spawnInterval() && dicks.length < capacity() && !document.hidden) { spawnTimer = 0; dropOne(); }
+    if (!game.on && !bk.on && spawnTimer > spawnInterval() && dicks.length < capacity() && !document.hidden) { spawnTimer = 0; dropOne(); }
 
     for (let i = dicks.length - 1; i >= 0; i--) {
       const d = dicks[i], p = d.strips[0].body.getPosition();
@@ -809,6 +982,7 @@ const GALLERY = [
     for (const d of dicks) if (d.thrown || d.flying) trackSmear(d);
     drawSmears();
     drawPaddle();
+    blocksFrame(STEP_MS());
     for (const d of dicks) if (!d.held) gl ? drawPieceGL(d) : drawPiece2D(d);
     if (held) gl ? drawPieceGL(held) : drawPiece2D(held);
 
@@ -841,9 +1015,10 @@ const GALLERY = [
   document.querySelector('.bar').addEventListener('pointerdown', () => sfx.init());
   document.getElementById('clear').onclick = () => { [...dicks].forEach(removeDick); };
   document.getElementById('pong').onclick = () => { sfx.init(); startGame(); };
-  document.getElementById('back').onclick = () => endGame();
-  document.getElementById('again').onclick = () => startGame();
-  document.getElementById('quit').onclick = () => endGame();
+  document.getElementById('back').onclick = () => (bk.on ? endBlocks() : endGame());
+  document.getElementById('again').onclick = () => (bk.on ? startBlocks() : startGame());
+  document.getElementById('quit').onclick = () => (bk.on ? endBlocks() : endGame());
+  document.getElementById('stack').onclick = () => { sfx.init(); startBlocks(); };
 
   // drag-and-drop test images (local only, nothing uploads)
   function addFiles(files) {
@@ -1034,7 +1209,7 @@ const GALLERY = [
     for (let i = 0; i < 4; i++) setTimeout(() => dropOne(), 200 + i * 500);
     requestAnimationFrame(t => { last = t; frame(t); });
   });
-  window.__pile = { dicks, world, dropOne, S, sfx, game }; // for testing
+  window.__pile = { dicks, world, dropOne, S, sfx, game, bk }; // for testing
 })();
 </script>
 </body>
