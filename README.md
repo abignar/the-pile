@@ -9,6 +9,7 @@ A single-page physics toy. No build step: `index.html`, the physics library in `
 - Grab one to pull it around — it grows and comes "closer to camera", shoving the others aside.
 - Fling one hard and it flies off, leaving a wet, drippy slime streak across the screen that dries up over 6 seconds.
 - Sound effects (made in code, no files): a wet squelch and a moan when you grab one (each piece has its own voice pitch), a soft plap when you let go, a gloopy flapping schlorp when you throw, and fleshy wet slaps when they hit each other. The **Sound** button mutes it (remembered per browser). Sound starts after the first tap — browsers require that.
+- **Play Pong** button: the pile clears and they drop one at a time. Slide the paddle (mouse, finger or arrow keys) to bounce them; knock one off the top or sides for a point, let one fall past the bottom and you lose a life. Three lives, and it speeds up as your score climbs. In `index.html`, `PADDLE` sets the paddle size and `gameStep()` sets how fast they come.
 - Behind everything, the gallery images scroll past as one continuous reel, left to right, in random order.
 
 ## Adding cut-outs

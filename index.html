@@ -36,6 +36,20 @@
   .drop{position:fixed;inset:12px;border:4px dashed var(--accent);border-radius:24px;display:none;align-items:center;justify-content:center;
     font-family:"Bagel Fat One";font-size:32px;color:var(--accent);background:#fff8;z-index:5;pointer-events:none}
   .drop.on{display:flex}
+  body:not(.game) .game-only{display:none !important}
+  body.game .pile-only{display:none !important}
+  body.game canvas#c{cursor:none}
+  .hud{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top));transform:translateX(-50%);z-index:2;display:flex;gap:14px;align-items:center;
+    font:700 22px "DM Sans",system-ui;color:var(--ink);background:var(--chip);border:2px solid var(--ink);border-radius:999px;padding:6px 18px;box-shadow:2px 2px 0 var(--ink);pointer-events:none}
+  .hud #lives{color:var(--accent);letter-spacing:3px;font-size:20px}
+  .over{position:fixed;inset:0;z-index:4;display:none;align-items:center;justify-content:center;background:rgba(58,31,43,.35)}
+  .over.on{display:flex}
+  .over .card{background:#fff8ef;border:3px solid var(--ink);border-radius:22px;box-shadow:5px 5px 0 var(--ink);padding:26px 30px;text-align:center;max-width:86vw}
+  .over h2{font:400 44px "Bagel Fat One",system-ui;color:var(--accent);text-shadow:3px 3px 0 var(--ink);margin-bottom:6px}
+  .over p{font:700 18px "DM Sans",system-ui;margin-bottom:18px}
+  .over .row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  .over button{font:700 15px "DM Sans",system-ui;color:var(--ink);background:#fff;border:2px solid var(--ink);border-radius:999px;padding:10px 18px;cursor:pointer;box-shadow:2px 2px 0 var(--ink)}
+  .over button.hot{background:var(--accent);color:#fff}
   .toast{position:fixed;left:50%;top:18px;transform:translateX(-50%);background:var(--ink);color:#fff;font-weight:700;font-size:13px;
     padding:8px 14px;border-radius:999px;opacity:0;transition:opacity .3s;z-index:6;pointer-events:none}
   .toast.on{opacity:1}
@@ -47,10 +61,14 @@
 <canvas id="c"></canvas>
 <canvas id="wet"></canvas>
 <div class="bar">
-  <button id="rain" class="hot">Make it rain</button>
+  <button id="rain" class="hot pile-only">Make it rain</button>
+  <button id="pong" class="pile-only">Play Pong</button>
+  <button id="back" class="game-only">Back to the pile</button>
   <button id="sound">Sound: on</button>
-  <button id="clear">Clear</button>
+  <button id="clear" class="pile-only">Clear</button>
 </div>
+<div class="hud game-only" id="hud"><span id="score">0</span><span id="lives"></span></div>
+<div class="over" id="over"><div class="card"><h2>Game over</h2><p id="final"></p><div class="row"><button id="again" class="hot">Play again</button><button id="quit">Back to the pile</button></div></div></div>
 <div class="drop" id="drop">Drop your cut-outs</div>
 <div class="toast" id="toast"></div>
 
@@ -282,7 +300,8 @@ const GALLERY = [
   const ground = world.createBody();
   let wallFixtures = [];
   function buildWalls() {
-    wallFixtures.forEach(f => ground.destroyFixture(f));
+    wallFixtures.forEach(f => ground.destroyFixture(f)); wallFixtures = [];
+    if (game.on) return; // in Pong the floor is gone and the sides are open
     const w = W / S, h = H / S, t = 4;
     wallFixtures = [
       ground.createFixture(new Box(w * 1.5, t, Vec2(w / 2, h + t), 0), { friction: 0.9 }),
@@ -296,6 +315,7 @@ const GALLERY = [
     canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
     buildWalls();
     // pull anything outside back in
+    if (game.on) return;
     for (const d of dicks) {
       if (d.thrown) continue;
       for (const st of d.strips) {
@@ -402,6 +422,94 @@ const GALLERY = [
     spawn(m + Math.random() * (W - m * 2), -baseSize() * 2.4, { vy });
   }
 
+  // ---------- PONG ----------
+  const game = { on: false, over: false, score: 0, lives: 3, t: 0, spawnT: 0, paddle: null, px: 0, pvx: 0, targetX: 0, keys: 0, hits: [] };
+  const PADDLE = { width: () => Math.min(230, Math.max(110, W * 0.3)), height: 16, lift: () => (W < 700 ? 90 : 70) };
+  const hudScore = document.getElementById('score'), hudLives = document.getElementById('lives'), overEl = document.getElementById('over');
+  function paddleY() { return H - PADDLE.lift(); }
+  function makePaddle() {
+    if (game.paddle) world.destroyBody(game.paddle);
+    const hw = PADDLE.width() / 2 / S, hh = PADDLE.height / 2 / S;
+    game.paddle = world.createKinematicBody({ position: Vec2(game.px / S, paddleY() / S) });
+    game.paddle.createFixture(new Box(hw, hh), { friction: 0.2, restitution: 0.3 });
+    game.paddle.setUserData(null);
+    game.paddle.isPaddle = true;
+  }
+  function updateHud() { hudScore.textContent = game.score; hudLives.textContent = '♥'.repeat(Math.max(0, game.lives)) + '♡'.repeat(Math.max(0, 3 - game.lives)); }
+  function clearPieces() { [...dicks].forEach(removeDick); }
+  function startGame() {
+    release(); clearPieces();
+    game.on = true; game.over = false; game.score = 0; game.lives = 3; game.t = 0; game.spawnT = 0.6; game.hits = [];
+    game.px = game.targetX = W / 2; game.pvx = 0;
+    document.body.classList.add('game'); overEl.classList.remove('on');
+    buildWalls(); makePaddle(); updateHud();
+  }
+  function endGame() {
+    game.on = false; game.over = false; overEl.classList.remove('on');
+    if (game.paddle) { world.destroyBody(game.paddle); game.paddle = null; }
+    document.body.classList.remove('game');
+    clearPieces(); buildWalls();
+    for (let i = 0; i < 4; i++) setTimeout(() => dropOne(), 200 + i * 400);
+  }
+  function gameOver() {
+    game.over = true;
+    document.getElementById('final').textContent = `You flicked ${game.score} cock${game.score === 1 ? '' : 's'} off the screen.`;
+    overEl.classList.add('on');
+    sfx.moan(0.6);
+  }
+  // paddle hits are queued during the physics step and applied straight after it
+  world.on('begin-contact', contact => {
+    if (!game.on) return;
+    const A = contact.getFixtureA().getBody(), B = contact.getFixtureB().getBody();
+    const other = A.isPaddle ? B : B.isPaddle ? A : null; if (!other) return;
+    const d = other.getUserData(); if (d && !game.hits.includes(d)) game.hits.push(d);
+  });
+  function applyHits() {
+    const now = performance.now();
+    for (const d of game.hits) {
+      if (!dicks.includes(d) || (d.lastHit && now - d.lastHit < 250)) continue;
+      d.lastHit = now; d.flying = true;
+      const mid = d.strips[d.strips.length >> 1].body.getPosition();
+      const off = Math.max(-1, Math.min(1, (mid.x * S - game.px) / (PADDLE.width() / 2))); // where on the paddle it landed
+      // enough speed to clear the top of the screen (give or take, so some come back for a rally)
+      const need = Math.sqrt(2 * 14 * (paddleY() + 160) / S);
+      const vy = -need * (0.82 + Math.random() * 0.33);
+      const vx = off * 7 + (game.pvx / S) * 0.35;
+      d.strips.forEach(st => { st.body.setLinearVelocity(Vec2(vx, vy)); st.body.setAngularVelocity((Math.random() - 0.5) * 6 + off * 3); st.body.setAwake(true); });
+      sfx.bump(0.9, d.k / 0.3);
+      if (Math.random() < 0.45) sfx.moan(d.voice);
+    }
+    game.hits.length = 0;
+  }
+  function gameStep(dt) {
+    if (!game.on) return;
+    game.t += dt;
+    // paddle follows the pointer (or arrow keys), and carries its speed into hits
+    if (game.keys) game.targetX += game.keys * 900 * dt;
+    const hw = PADDLE.width() / 2;
+    game.targetX = Math.max(hw, Math.min(W - hw, game.targetX));
+    const nx = game.px + (game.targetX - game.px) * Math.min(1, dt * 25);
+    game.pvx = (nx - game.px) / dt; game.px = nx;
+    if (game.paddle) game.paddle.setTransform(Vec2(game.px / S, paddleY() / S), 0);
+    if (game.over) return;
+    // more of them, faster, as the score goes up
+    game.spawnT -= dt;
+    const live = dicks.filter(d => !d.thrown).length, maxLive = Math.min(9, 2 + Math.floor(game.score / 4));
+    if (game.spawnT <= 0 && live < maxLive) { game.spawnT = Math.max(0.55, 2.2 - game.score * 0.06); dropOne(0.4); }
+  }
+  addEventListener('keydown', e => { if (!game.on) return; if (e.key === 'ArrowLeft') game.keys = -1; if (e.key === 'ArrowRight') game.keys = 1; });
+  addEventListener('keyup', e => { if ((e.key === 'ArrowLeft' && game.keys < 0) || (e.key === 'ArrowRight' && game.keys > 0)) game.keys = 0; });
+  function drawPaddle() {
+    if (!game.on) return;
+    const w = PADDLE.width(), h = PADDLE.height, x = game.px - w / 2, y = paddleY() - h / 2;
+    wet.save();
+    wet.fillStyle = '#3a1f2b'; wet.beginPath(); wet.roundRect ? wet.roundRect(x + 3, y + 3, w, h, h / 2) : wet.rect(x + 3, y + 3, w, h); wet.fill();
+    wet.fillStyle = '#ff5a7a'; wet.strokeStyle = '#3a1f2b'; wet.lineWidth = 2.5;
+    wet.beginPath(); wet.roundRect ? wet.roundRect(x, y, w, h, h / 2) : wet.rect(x, y, w, h); wet.fill(); wet.stroke();
+    wet.fillStyle = 'rgba(255,255,255,.45)'; wet.beginPath(); wet.roundRect ? wet.roundRect(x + h * 0.6, y + 3, w - h * 1.2, 3, 2) : wet.rect(x + h * 0.6, y + 3, w - h * 1.2, 3); wet.fill();
+    wet.restore();
+  }
+
   // ---------- grabbing & throwing ----------
   let held = null, mouseJoint = null, grabStrip = null;
   const pointer = { x: 0, y: 0, hist: [] };
@@ -422,6 +530,7 @@ const GALLERY = [
   canvas.addEventListener('pointerdown', e => {
     pointer.x = e.clientX; pointer.y = e.clientY; pointer.hist = [{ x: e.clientX, y: e.clientY, t: performance.now() }];
     sfx.init();
+    if (game.on) { game.targetX = e.clientX; return; }
     const b = pick(e.clientX, e.clientY); if (!b) return;
     const d = b.getUserData();
     sfx.grab(d.k / 0.3);
@@ -435,6 +544,7 @@ const GALLERY = [
   });
   canvas.addEventListener('pointermove', e => {
     pointer.x = e.clientX; pointer.y = e.clientY;
+    if (game.on) game.targetX = e.clientX;
     pointer.hist.push({ x: e.clientX, y: e.clientY, t: performance.now() });
     if (pointer.hist.length > 8) pointer.hist.shift();
     if (mouseJoint) mouseJoint.setTarget(Vec2(e.clientX / S, e.clientY / S));
@@ -481,7 +591,7 @@ const GALLERY = [
       // landed pieces lose their floaty fall drag so they slump naturally
       const mid = d.strips[d.strips.length >> 1].body;
       const fast = mid.getLinearVelocity().length() * S > 250;
-      if (!d.thrown) d.strips.forEach(st => st.body.setLinearDamping(fast && !d.held ? FEEL.fallDrag : 0.15));
+      if (!d.thrown) d.strips.forEach(st => st.body.setLinearDamping(d.flying ? 0.05 : (fast && !d.held ? FEEL.fallDrag : 0.15)));
       // squirm: joint motors run a wave down the body now and then
       if (FEEL.squirm > 0 && !d.held && !d.thrown) {
         if (d.wig > 0) {
@@ -669,23 +779,36 @@ const GALLERY = [
   function frame(now) {
     acc += Math.min(0.1, (now - last) / 1000); last = now;
     let steps = 0;
-    while (acc >= STEP && steps < 4) { stepLogic(STEP); world.step(STEP, 6, 3); acc -= STEP; steps++; }
+    while (acc >= STEP && steps < 4) { stepLogic(STEP); gameStep(STEP); world.step(STEP, 6, 3); applyHits(); acc -= STEP; steps++; }
     if (steps === 4) acc = 0;
 
     if (gl) { gl.viewport(0, 0, canvas.width, canvas.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.uniform2f(uRes, W, H); gl.uniform2f(uOff, 0, 0); }
     else { ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H); }
 
     spawnTimer += 16.7;
-    if (spawnTimer > spawnInterval() && dicks.length < capacity() && !document.hidden) { spawnTimer = 0; dropOne(); }
+    if (!game.on && spawnTimer > spawnInterval() && dicks.length < capacity() && !document.hidden) { spawnTimer = 0; dropOne(); }
 
     for (let i = dicks.length - 1; i >= 0; i--) {
       const d = dicks[i], p = d.strips[0].body.getPosition();
       const x = p.x * S, y = p.y * S;
+      if (game.on && !d.thrown) {
+        if (d.flying && (x < -120 || x > W + 120 || y < -140)) { // knocked off the screen: point!
+          removeDick(d);
+          if (!game.over) { game.score++; updateHud(); sfx.throw(0.8); }
+          continue;
+        }
+        if (y > H + 60) { // missed it
+          removeDick(d);
+          if (!game.over) { game.lives--; updateHud(); sfx.drop(1.6); if (game.lives <= 0) gameOver(); }
+          continue;
+        }
+      }
       if (y > H + 600 || (d.thrown && (x < -500 || x > W + 500 || y > H + 400 || y < -2500))) removeDick(d);
     }
 
-    for (const d of dicks) if (d.thrown) trackSmear(d);
+    for (const d of dicks) if (d.thrown || d.flying) trackSmear(d);
     drawSmears();
+    drawPaddle();
     for (const d of dicks) if (!d.held) gl ? drawPieceGL(d) : drawPiece2D(d);
     if (held) gl ? drawPieceGL(held) : drawPiece2D(held);
 
@@ -717,6 +840,10 @@ const GALLERY = [
   soundBtn.onclick = () => { sfx.init(); soundBtn.textContent = 'Sound: ' + (sfx.toggle() ? 'on' : 'off'); };
   document.querySelector('.bar').addEventListener('pointerdown', () => sfx.init());
   document.getElementById('clear').onclick = () => { [...dicks].forEach(removeDick); };
+  document.getElementById('pong').onclick = () => { sfx.init(); startGame(); };
+  document.getElementById('back').onclick = () => endGame();
+  document.getElementById('again').onclick = () => startGame();
+  document.getElementById('quit').onclick = () => endGame();
 
   // drag-and-drop test images (local only, nothing uploads)
   function addFiles(files) {
@@ -907,7 +1034,7 @@ const GALLERY = [
     for (let i = 0; i < 4; i++) setTimeout(() => dropOne(), 200 + i * 500);
     requestAnimationFrame(t => { last = t; frame(t); });
   });
-  window.__pile = { dicks, world, dropOne, S, sfx }; // for testing
+  window.__pile = { dicks, world, dropOne, S, sfx, game }; // for testing
 })();
 </script>
 </body>
