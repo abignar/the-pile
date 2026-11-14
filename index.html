@@ -537,8 +537,9 @@ const GALLERY = [
   }
   function nextType() { if (!bk.bag.length) bk.bag = Object.keys(SHAPES).sort(() => Math.random() - 0.5); return bk.bag.pop(); }
   function newPiece(type) {
-    // each piece is one shape type; every tile shows a cock from the cut-outs
-    const cells = SHAPES[type].map(([x, y]) => ({ x, y, skin: Math.floor(Math.random() * images.length) }));
+    // each piece is one shape made entirely of one kind of cock
+    const skin = Math.floor(Math.random() * images.length);
+    const cells = SHAPES[type].map(([x, y]) => ({ x, y, skin }));
     return { type, cells, x: 3, y: -1 };
   }
   function fits(p, dx = 0, dy = 0, cells = p.cells) {
