@@ -703,7 +703,7 @@ const GALLERY = [
   const SNK = { head: new Image(), ribs: new Image(), tail: new Image() };
   SNK.head.src = 'images/snake/head.webp'; SNK.ribs.src = 'images/snake/ribs.webp'; SNK.tail.src = 'images/snake/tail.webp';
   // where the spine runs through each sprite (pixels in the sprite) and how long a rib section is
-  const SPINE = { head: 100, ribs: 82, tail: 120, ribLen: 90 };
+  const SPINE = { head: 100, ribs: 92, tail: 120, ribLen: 90, skullX: 127, skullY: 165 }; // skull centre in the head sprite
   const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
   const sn = { on: false, paused: false, over: false, body: [], prev: [], dir: 'right', queue: [], acc: 0, food: null, eaten: 0, touch: null };
   function snakeBoard() {
@@ -818,9 +818,13 @@ const GALLERY = [
     wet.beginPath(); wet.rect(b.x - 6, b.y - 6, b.cols * c + 12, b.rows * c + 12); wet.clip();
     // food: a wiggling cock
     if (sn.food && images[sn.food.skin]) {
-      const im = images[sn.food.skin].img, f = sn.food, s2 = c * 1.5, k = s2 / Math.max(im.width, im.height);
-      const wob = Math.sin((performance.now() - f.born) / 160) * 0.18, pop = Math.min(1, (performance.now() - f.born) / 220);
-      wet.save(); wet.translate(b.x + (f.x + 0.5) * c, b.y + (f.y + 0.5) * c); wet.rotate(wob); wet.scale(pop, pop);
+      const im = images[sn.food.skin].img, f = sn.food, s2 = c * 2.1, k = s2 / Math.max(im.width, im.height);
+      const wob = Math.sin((performance.now() - f.born) / 160) * 0.14, pop = Math.min(1, (performance.now() - f.born) / 220);
+      const fx = b.x + (f.x + 0.5) * c, fy = b.y + (f.y + 0.5) * c, pulse = 1 + Math.sin(performance.now() / 220) * 0.08;
+      // a soft target spot exactly on the square you need to hit
+      wet.fillStyle = 'rgba(255,90,122,.28)'; wet.beginPath(); wet.arc(fx, fy, c * 0.62 * pulse, 0, Math.PI * 2); wet.fill();
+      wet.strokeStyle = 'rgba(255,90,122,.65)'; wet.lineWidth = 2; wet.beginPath(); wet.arc(fx, fy, c * 0.62 * pulse, 0, Math.PI * 2); wet.stroke();
+      wet.save(); wet.translate(fx, fy); wet.rotate(wob); wet.scale(pop, pop);
       wet.drawImage(im, -im.width * k / 2, -im.height * k / 2, im.width * k, im.height * k); wet.restore();
     }
     // the snake, smoothly between steps
@@ -837,7 +841,8 @@ const GALLERY = [
     }
     // the skull, facing where it's going
     const ha = angTo(P[1], P[0]);
-    drawSprite(SNK.head, P[0].x, P[0].y, ha, k * 0.72, (c * 0.5) / (k * 0.72) * 0.2, SPINE.head);
+    wet.fillStyle = 'rgba(255,255,255,.4)'; wet.beginPath(); wet.arc(P[0].x, P[0].y, c * 0.55, 0, Math.PI * 2); wet.fill();
+    drawSprite(SNK.head, P[0].x, P[0].y, ha, k * 0.62, SPINE.skullX, SPINE.skullY);
     wet.restore();
   }
 
