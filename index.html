@@ -44,6 +44,15 @@
   .hud #lives{color:var(--accent);letter-spacing:3px;font-size:20px}
   .over{position:fixed;inset:0;z-index:4;display:none;align-items:center;justify-content:center;background:rgba(58,31,43,.35)}
   .over.on{display:flex}
+  .hint{position:fixed;inset:0;z-index:3;display:none;align-items:center;justify-content:center;background:rgba(40,28,36,.55);opacity:0;transition:opacity .25s}
+  .hint.on{display:flex;opacity:1}
+  .hint .hcard{display:flex;flex-direction:column;align-items:center;gap:6px;color:#fff;text-align:center}
+  .hint b{font:400 30px "Bagel Fat One",system-ui;text-shadow:3px 3px 0 #3a1f2b}
+  .hint small{font:700 14px "DM Sans",system-ui;opacity:.85}
+  .hint .swipe{position:relative;width:150px;height:70px}
+  .hint .swipe::before{content:"";position:absolute;left:10px;right:10px;top:34px;height:4px;border-radius:2px;background:rgba(255,255,255,.5)}
+  .hint .swipe span{position:absolute;top:8px;left:0;font-size:44px;animation:swipe 1s ease-in-out infinite}
+  @keyframes swipe{0%{transform:translateX(0);opacity:0}15%{opacity:1}85%{opacity:1}100%{transform:translateX(105px);opacity:0}}
   body:not(.blocks) .blocks-only{display:none !important}
   body:not(.snake) .snake-only{display:none !important}
   body.blocks .pong-only{display:none !important}
@@ -84,6 +93,7 @@
 <div class="pad snake-only" id="spad">
   <button data-d="left" aria-label="Left">◀</button><button data-d="up" aria-label="Up">▲</button><button data-d="down" aria-label="Down">▼</button><button data-d="right" aria-label="Right">▶</button>
 </div>
+<div class="hint" id="snakeHint"><div class="hcard"><div class="swipe"><span>☝</span></div><b>Swipe to steer</b><small>or use the arrows below</small></div></div>
 <div class="over" id="over"><div class="card"><h2>Game over</h2><p id="final"></p><div class="row"><button id="again" class="hot">Play again</button><button id="quit">Back to the pile</button></div></div></div>
 <div class="drop" id="drop">Drop your cut-outs</div>
 <div class="toast" id="toast"></div>
@@ -695,7 +705,7 @@ const GALLERY = [
   // where the spine runs through each sprite (pixels in the sprite) and how long a rib section is
   const SPINE = { head: 100, ribs: 82, tail: 120, ribLen: 90 };
   const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
-  const sn = { on: false, over: false, body: [], prev: [], dir: 'right', queue: [], acc: 0, food: null, eaten: 0, touch: null };
+  const sn = { on: false, paused: false, over: false, body: [], prev: [], dir: 'right', queue: [], acc: 0, food: null, eaten: 0, touch: null };
   function snakeBoard() {
     const fine = matchMedia('(hover:hover) and (pointer:fine)').matches;
     const top = 72, bottom = fine ? 70 : 140;
@@ -720,8 +730,14 @@ const GALLERY = [
     sn.prev = sn.body.map(p => ({ ...p }));
     document.body.classList.add('game', 'snake'); overEl.classList.remove('on');
     buildWalls(); placeFood(); hudSnake();
+    // phones: a quick "swipe to steer" card; the snake waits until it's gone (2s or a tap)
+    if (!matchMedia('(hover:hover) and (pointer:fine)').matches) {
+      const h = document.getElementById('snakeHint'); sn.paused = true; h.classList.add('on');
+      const go = () => { if (!sn.paused) return; sn.paused = false; h.classList.remove('on'); clearTimeout(sn.hintT); };
+      sn.hintT = setTimeout(go, 2000); h.onpointerdown = e => { e.preventDefault(); go(); };
+    }
   }
-  function stopSnake() { sn.on = false; sn.over = false; document.body.classList.remove('snake'); }
+  function stopSnake() { sn.on = false; sn.over = false; sn.paused = false; clearTimeout(sn.hintT); document.getElementById('snakeHint').classList.remove('on'); document.body.classList.remove('snake'); }
   function endSnake() {
     stopSnake(); overEl.classList.remove('on'); document.body.classList.remove('game');
     clearPieces(); buildWalls();
@@ -794,7 +810,7 @@ const GALLERY = [
   }
   function snakeFrame(ms) {
     if (!sn.on) return;
-    if (!sn.over) { sn.acc += ms; while (sn.acc >= snakeMs()) { sn.acc -= snakeMs(); snakeStep(); if (sn.over) break; } }
+    if (!sn.over && !sn.paused) { sn.acc += ms; while (sn.acc >= snakeMs()) { sn.acc -= snakeMs(); snakeStep(); if (sn.over) break; } }
     const b = snakeBoard(), c = b.c, t = sn.over ? 1 : Math.min(1, sn.acc / snakeMs());
     wet.save();
     wet.fillStyle = 'rgba(255,248,239,.6)'; wet.strokeStyle = '#3a1f2b'; wet.lineWidth = 3;

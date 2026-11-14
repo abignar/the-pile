@@ -96,26 +96,62 @@
   let map = null;
   const zoneAt = (x, y) => { const d = Math.max(Math.abs(x - C), Math.abs(y - C)); return ZONES.findIndex(z => d < z.upto); };
   function genMap(seed) {
-    const m = new Uint8Array(MAP * MAP), s = seed % 100000;
-    const noise = (x, y) => { // smooth-ish blobs for tall grass patches
+    const m = new Uint8Array(MAP * MAP), s = seed % 100000, r = rng(seed + 11);
+    const noise = (x, y, salt) => { // smooth blobs
       let v = 0; for (const [f, a] of [[0.09, 1], [0.21, 0.5], [0.45, 0.25]]) {
-        const fx = x * f, fy = y * f, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
-        const sm = t => t * t * (3 - 2 * t), a00 = hash(x0, y0, s + f * 1000), a10 = hash(x0 + 1, y0, s + f * 1000), a01 = hash(x0, y0 + 1, s + f * 1000), a11 = hash(x0 + 1, y0 + 1, s + f * 1000);
+        const k = s + salt + f * 1000, fx = x * f, fy = y * f, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+        const sm = t => t * t * (3 - 2 * t), a00 = hash(x0, y0, k), a10 = hash(x0 + 1, y0, k), a01 = hash(x0, y0 + 1, k), a11 = hash(x0 + 1, y0 + 1, k);
         v += a * ((a00 * (1 - sm(tx)) + a10 * sm(tx)) * (1 - sm(ty)) + (a01 * (1 - sm(tx)) + a11 * sm(tx)) * sm(ty));
       } return v / 1.75; };
+    const inside = (x, y) => Math.max(Math.abs(x - C), Math.abs(y - C)) < MAP / 2 - 1;
+    // 1. land: lots of tall grass, clumps of trees/rocks/cacti as walls
     for (let y = 0; y < MAP; y++) for (let x = 0; x < MAP; x++) {
       const i = y * MAP + x, d = Math.max(Math.abs(x - C), Math.abs(y - C)), z = ZONES[zoneAt(x, y)];
-      if (d >= MAP / 2 - 1) { m[i] = 6; continue; }
-      const onPath = (x === C || x === C - 1 || y === C || y === C - 1) && d <= MAP / 2 - 2;
-      if (onPath) { m[i] = 3; continue; }
+      if (!inside(x, y)) { m[i] = 6; continue; }
       if (d < 3) { m[i] = 0; continue; }
-      if (noise(x, y) > 0.52) m[i] = 1;
-      if (hash(x, y, s + 7) < z.density) m[i] = 2;
+      m[i] = noise(x, y, 0) > 0.38 ? 1 : 0;                                   // grass covers most of the land
+      if (noise(x, y, 500) > 0.6 || hash(x, y, s + 7) < z.density) m[i] = 2;  // walls of trees/rocks, plus scattered ones
     }
-    // heal pads at the centre and where each path crosses into a new ring
+    // 2. winding, maze-like trails from the centre out to each boss, with dead-end side branches
+    const pads = [];
+    const carve = (x, y) => { if (!inside(x, y)) return; const i = y * MAP + x; if (m[i] !== 4 && m[i] !== 5) m[i] = 3; };
+    for (const B of BOSSES) {
+      const dx = Math.sign(B.x - C), dy = Math.sign(B.y - C);           // main direction out
+      const lx = dy !== 0 ? 1 : 0, ly = dx !== 0 ? 1 : 0;               // sideways direction
+      let x = C, y = C, run = 0, runDir = 1, steps = 0, lastZone = 0, guard = 0;
+      const lat = () => (lx ? x - B.x : y - B.y);                       // how far sideways from the line to the boss
+      const rem = () => Math.abs(dx ? B.x - x : B.y - y);               // how far still to go outwards
+      while ((x !== B.x || y !== B.y) && guard++ < 4000) {
+        const maxLat = Math.min(11, Math.floor(rem() / 1.6));
+        if (rem() === 0) { const s2 = -Math.sign(lat()); x += lx * s2; y += ly * s2; }
+        else if (run > 0 && Math.abs(lat() + runDir) <= maxLat) { x += lx * runDir; y += ly * runDir; run--; }
+        else if (Math.abs(lat()) > maxLat) { const s2 = -Math.sign(lat()); x += lx * s2; y += ly * s2; }
+        else {
+          x += dx; y += dy; run = 0;
+          if (r() < 0.38) { run = 2 + Math.floor(r() * 7); runDir = r() < 0.5 ? -1 : 1; }
+        }
+        carve(x, y); carve(x + (dx ? 0 : 1) * (lx ? 0 : 1), y); carve(x + lx * 0 + (dx ? 0 : 0), y + (dy ? 0 : 1) * 0);
+        // keep the trail two tiles wide
+        if (dx) carve(x, y + 1); else carve(x + 1, y);
+        // a heal pad where the trail crosses into each new ring
+        const zi = zoneAt(x, y); if (zi !== lastZone && zi < 4) { pads.push([x, y]); lastZone = zi; }
+        // dead-end side branches make it maze-like
+        if (++steps % 9 === 0 && r() < 0.6) {
+          let bx = x, by = y, bdx = lx * (r() < 0.5 ? -1 : 1), bdy = ly * (r() < 0.5 ? -1 : 1);
+          const len = 5 + Math.floor(r() * 10);
+          for (let k = 0; k < len; k++) {
+            if (r() < 0.3) { const t2 = bdx; bdx = bdy * (r() < 0.5 ? 1 : -1) || dx; bdy = t2 * (r() < 0.5 ? 1 : -1) || dy; }
+            bx += bdx; by += bdy; if (!inside(bx, by) || Math.max(Math.abs(bx - C), Math.abs(by - C)) < 3) break; carve(bx, by);
+          }
+        }
+      }
+    }
+    // 3. grass grows across the trails in places
+    for (let y = 0; y < MAP; y++) for (let x = 0; x < MAP; x++) { const i = y * MAP + x; if (m[i] === 3 && noise(x, y, 900) > 0.6 && Math.max(Math.abs(x - C), Math.abs(y - C)) > 4) m[i] = 1; }
+    // 4. heal pads: centre + where each trail enters a new ring; boss pedestals with a clear ring round them
     m[C * MAP + C + 1] = 4;
-    for (const z of ZONES.slice(0, 4)) for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) { const x = C + dx * z.upto + (dy ? 1 : 0), y = C + dy * z.upto + (dx ? 1 : 0); m[y * MAP + x] = 4; }
-    for (const b of BOSSES) { m[b.y * MAP + b.x] = 5; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const j = (b.y + dy) * MAP + b.x + dx; if (m[j] === 2 || m[j] === 1) m[j] = 0; } }
+    for (const [x, y] of pads) m[y * MAP + x] = 4;
+    for (const b of BOSSES) { for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const j = (b.y + dy) * MAP + b.x + dx; if (m[j] === 2) m[j] = 0; } m[b.y * MAP + b.x] = 5; }
     return m;
   }
   const tileAt = (x, y) => (x < 0 || y < 0 || x >= MAP || y >= MAP) ? 6 : map[y * MAP + x];
@@ -316,7 +352,7 @@
   }
 
   // WORLD
-  function enterWorld() { scene = 'world'; P.x = save.x; P.y = save.y; P.px = P.x * T; P.py = P.y * T; P.face = save.face || 'down'; P.moving = 0; map = genMap(save.seed); persist(); }
+  function enterWorld() { map = genMap(save.seed); if (!walkable(tileAt(save.x, save.y))) { save.x = C; save.y = C + 2; } scene = 'world'; P.x = save.x; P.y = save.y; P.px = P.x * T; P.py = P.y * T; P.face = save.face || 'down'; P.moving = 0; persist(); }
   function healMon() { const m = save.mon; m.hp = m.maxhp; m.moves.forEach(mv => mv.pp = MOVES[mv.name].pp); }
   function worldUpdate() {
     if (msgStep(pressed.includes('a'))) return;
@@ -348,7 +384,7 @@
     save.x = P.x; save.y = P.y; save.face = P.face;
     const t = tileAt(P.x, P.y);
     if (t === 4 && (save.mon.hp < save.mon.maxhp || save.mon.moves.some(m => m.pp < MOVES[m.name].pp))) { healMon(); snd.heal(); say(['Your cock had a little rest.', 'HP and moves are back to full!']); persist(); }
-    if (t === 1 && Math.random() < 0.11) startBattle(-1);
+    if (t === 1 && Math.random() < 0.09) startBattle(-1); // a touch rarer now there's grass everywhere
     if (P.step % 20 === 0) persist();
   }
   function menuOptions() {
@@ -546,5 +582,5 @@
     loaded.then(() => requestAnimationFrame(loop));
   }
   function close() { if (save && save.mon) persist(); open = false; window.__rpgOpen = false; root.classList.remove('on'); }
-  window.CockQuest = { open: openGame, close, get state() { return { scene, save, battle, P, msgs: msgs.map(m => m.t) }; }, press, release };
+  window.CockQuest = { open: openGame, close, _map: genMap, get state() { return { scene, save, battle, P, msgs: msgs.map(m => m.t) }; }, press, release };
 })();
