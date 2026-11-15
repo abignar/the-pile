@@ -1,6 +1,10 @@
 {
-  // Cloudflare config: serve this folder as a static website.
+  // Cloudflare config: serve this folder as a static website,
+  // with worker.js handling /api/scores (the COOM leaderboard).
   "name": "the-pile",
   "compatibility_date": "2026-11-01",
-  "assets": { "directory": "./" }
+  "main": "worker.js",
+  "assets": { "directory": "./", "binding": "ASSETS" }
+  // To switch on the worldwide COOM leaderboard, add a KV namespace binding here:
+  // ,"kv_namespaces": [{ "binding": "SCORES", "id": "<your KV namespace id>" }]
 }

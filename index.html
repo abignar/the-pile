@@ -82,6 +82,7 @@
   <button id="stack" class="pile-only">Stack 'Em</button>
   <button id="snake" class="pile-only">Snake</button>
   <button id="quest" class="pile-only">Cock Quest</button>
+  <button id="coomBtn" class="pile-only hot">COOM</button>
   <button id="back" class="game-only">Back to the pile</button>
   <button id="sound">Sound: on</button>
   <button id="clear" class="pile-only">Clear</button>
@@ -1383,6 +1384,8 @@ const GALLERY = [
 })();
 </script>
 <script src="js/rpg.js"></script>
-<script>document.getElementById('quest').onclick = () => window.CockQuest && window.CockQuest.open();</script>
+<script src="js/coom.js"></script>
+<script>document.getElementById('quest').onclick = () => window.CockQuest && window.CockQuest.open();
+document.getElementById("coomBtn").onclick = () => window.Coom && window.Coom.open();</script>
 </body>
 </html>

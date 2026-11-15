@@ -3,3 +3,4 @@ README.md
 wrangler.jsonc
 .gitignore
 .assetsignore
+worker.js
