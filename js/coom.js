@@ -196,7 +196,7 @@
   }
 
   // ---------- weapons (one per number key, like the classic layout) ----------
-  const icon = (col, label) => canvasSprite(32, 32, g => { g.fillStyle = col; g.beginPath(); g.roundRect ? g.roundRect(4, 9, 24, 14, 6) : g.rect(4, 9, 24, 14); g.fill(); g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(4, 18, 24, 3); g.fillStyle = '#fff'; g.beginPath(); g.arc(27, 14, 3, 0, 7); g.fill(); g.fillStyle = '#3a1f2b'; g.font = 'bold 9px monospace'; g.fillText(label, 11, 20); });
+  const icon = (col, label) => canvasSprite(32, 32, g => { const gr = g.createLinearGradient(0, 9, 0, 23); gr.addColorStop(0, '#7c858c'); gr.addColorStop(0.5, '#2b3035'); gr.addColorStop(1, '#14171a'); g.fillStyle = gr; g.beginPath(); g.roundRect ? g.roundRect(3, 10, 24, 12, 5) : g.rect(3, 10, 24, 12); g.fill(); g.fillStyle = '#d6ccb4'; for (let i = 0; i < 5; i++) g.fillRect(6 + i * 4, 11, 2, 10); const gl = g.createRadialGradient(27, 16, 0, 27, 16, 6); gl.addColorStop(0, '#fff'); gl.addColorStop(0.4, col); gl.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gl; g.beginPath(); g.arc(27, 16, 6, 0, 7); g.fill(); g.fillStyle = '#fff'; g.font = 'bold 8px monospace'; g.fillText(label, 12, 30); });
   const WEAPONS = [
     { id: 'slap',   slot: 1, name: 'LIMP SLAP',      cost: 0,  rate: 0.42, melee: { range: 1.2, dmg: 22, arc: 0.6 } },
     { id: 'vib',    slot: 1, name: 'THE VIBRATOR',   cost: 0,  rate: 0.08, melee: { range: 1.05, dmg: 6, arc: 0.45 }, unlock: 1, col: '#b04fd6' },
@@ -556,25 +556,76 @@
       }
     }
   }
+  // ---------- weapon art: biomechanical — gunmetal, bone, vertebrae, cables, glowing tips ----------
+  const METAL = ['#14171a', '#2b3035', '#4a5157', '#7c858c'], BONE = ['#6e6553', '#a89d84', '#d6ccb4', '#efe8d6'];
+  function metalGrad(x, w, dark = 0) { const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, METAL[0]); g.addColorStop(0.35, METAL[3 - dark]); g.addColorStop(0.55, METAL[2]); g.addColorStop(1, METAL[0]); return g; }
+  function boneGrad(x, w) { const g = ctx.createLinearGradient(x, 0, x + w, 0); g.addColorStop(0, BONE[0]); g.addColorStop(0.4, BONE[3]); g.addColorStop(0.7, BONE[1]); g.addColorStop(1, BONE[0]); return g; }
+  // a stack of vertebra-like plates along a barrel
+  function spine(x, y, w, h, n, col) {
+    for (let i = 0; i < n; i++) {
+      const yy = y + (h / n) * i, ww = w * (0.82 + 0.18 * Math.sin(i * 1.7));
+      ctx.fillStyle = col || boneGrad(x - ww / 2, ww); ctx.beginPath();
+      ctx.moveTo(x - ww / 2, yy + h / n * 0.15); ctx.quadraticCurveTo(x, yy - h / n * 0.25, x + ww / 2, yy + h / n * 0.15);
+      ctx.lineTo(x + ww / 2 - 2, yy + h / n * 0.75); ctx.quadraticCurveTo(x, yy + h / n * 0.45, x - ww / 2 + 2, yy + h / n * 0.75); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(x - ww / 2 + 2, yy + h / n * 0.72, ww - 4, 1);
+    }
+  }
+  // a ribbed hose curving between two points
+  function cable(x1, y1, cx, cy, x2, y2, w = 3) {
+    ctx.strokeStyle = METAL[0]; ctx.lineWidth = w + 2; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(cx, cy, x2, y2); ctx.stroke();
+    ctx.strokeStyle = METAL[2]; ctx.lineWidth = w; ctx.setLineDash([2, 2]); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(cx, cy, x2, y2); ctx.stroke(); ctx.setLineDash([]);
+  }
+  function barrel(x, y, w, h, rad = 6) { ctx.fillStyle = metalGrad(x, w); ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, rad) : ctx.rect(x, y, w, h); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(x + w * 0.3, y + 2, 2, h - 4); }
+  function glow(x, y, r, col, a = 1) { const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(255,255,255,${a})`); g.addColorStop(0.35, col); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
+  function rib(x, y, w, curl) { ctx.strokeStyle = BONE[1]; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + w * 0.6, y - curl, x + w, y + 2); ctx.stroke(); ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, y + 1.5); ctx.quadraticCurveTo(x + w * 0.6, y - curl + 1.5, x + w, y + 3.5); ctx.stroke(); }
+  function grip() { // a bony, segmented handle wrapped by a hose
+    ctx.fillStyle = METAL[1]; ctx.fillRect(-9, -20, 18, 24); spine(0, -20, 16, 24, 4); cable(-10, -16, -22, -4, -14, 6, 3);
+  }
   function drawWeapon() {
-    const w = WEAPON(state.weapon), id = w.id, r = state.recoil || 0;
+    const w = WEAPON(state.weapon), id = w.id, r = state.recoil || 0, t = state.levelT;
     let bx = W / 2 + 34 + Math.cos(state.bob) * 4, by = VIEW_H - 8 + Math.abs(Math.sin(state.bob)) * 4 + r * 6;
     if (id === 'vib' && firing) { bx += rnd(-1.5, 1.5); by += rnd(-1.5, 1.5); }
     ctx.save(); ctx.translate(bx, by);
-    const tube = (x, y, w2, h, col, rib = 'rgba(0,0,0,.18)', rad = 9) => { ctx.fillStyle = col; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w2, h, rad) : ctx.rect(x, y, w2, h); ctx.fill(); ctx.fillStyle = rib; for (let i = 8; i < h - 4; i += 9) ctx.fillRect(x, y + i, w2, 2); ctx.fillStyle = 'rgba(255,255,255,.3)'; ctx.fillRect(x + 4, y + 3, 3, h - 6); };
-    const tip = (x, y, rx, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(x, y, rx, rx * 0.6, 0, 0, 7); ctx.fill(); };
-    const grip = () => { ctx.fillStyle = '#7d3657'; ctx.fillRect(-8, -18, 16, 22); };
-    if (id === 'slap') { // a floppy pink thing that swings when you slap
-      ctx.rotate(-0.3 - r * 0.9); ctx.fillStyle = '#e8a7bd'; ctx.beginPath(); ctx.moveTo(-10, 4); ctx.quadraticCurveTo(-26, -30, -6, -56); ctx.quadraticCurveTo(6, -62, 10, -50); ctx.quadraticCurveTo(-6, -26, 12, 4); ctx.fill(); tip(0, -56, 9, '#f2b5c9');
-    } else if (id === 'vib') { grip(); tube(-11, -62, 22, 50, '#b04fd6', 'rgba(60,0,90,.3)', 11); tip(0, -62, 9, '#d58af0'); ctx.fillStyle = '#fff'; ctx.fillRect(-3, -40, 6, 3); }
-    else if (id === 'squirt') { grip(); tube(-14, -54, 28, 42, '#e07fa5'); tip(0, -56, 10, '#ff9ec4'); }
-    else if (id === 'spray') { grip(); tube(-14, -54, 28, 42, '#c85f8c'); ctx.fillStyle = '#a24b72'; ctx.fillRect(-18, -58, 10, 8); ctx.fillRect(8, -58, 10, 8); tip(0, -56, 10, '#ff9ec4'); }
-    else if (id === 'buster') { grip(); ctx.fillStyle = '#c24b5a'; ctx.beginPath(); ctx.arc(-11, -12, 11, 0, 7); ctx.arc(11, -12, 11, 0, 7); ctx.fill(); tube(-20, -62, 18, 50, '#e0646f'); tube(2, -62, 18, 50, '#e0646f'); tip(-11, -63, 8, '#ff9aa4'); tip(11, -63, 8, '#ff9aa4'); }
-    else if (id === 'gusher') { grip(); tube(-15, -50, 30, 38, '#f0a07a'); ctx.save(); ctx.translate(0, -56); ctx.rotate(state.levelT * (firing ? 30 : 2)); ctx.fillStyle = '#d07a55'; for (let k = 0; k < 4; k++) { ctx.rotate(Math.PI / 2); ctx.fillRect(-3, -12, 6, 8); } ctx.restore(); tip(0, -56, 7, '#ffd0b8'); }
-    else if (id === 'money') { grip(); tube(-18, -60, 36, 48, '#d98aa8'); ctx.fillStyle = '#e2b13c'; ctx.fillRect(-18, -40, 36, 7); ctx.fillStyle = '#7a5a12'; ctx.font = 'bold 7px monospace'; ctx.fillText('$', -2, -34); tip(0, -62, 14, '#f2b5c9'); }
-    else if (id === 'pulse') { grip(); tube(-13, -58, 26, 46, '#7fb8d6', 'rgba(255,255,255,.25)'); ctx.fillStyle = `rgba(190,240,255,${0.5 + Math.sin(state.levelT * 12) * 0.3})`; ctx.fillRect(-13, -46, 26, 4); ctx.fillRect(-13, -30, 26, 4); tip(0, -60, 9, '#dff6ff'); }
-    else if (id === 'finish') { grip(); tube(-22, -66, 44, 56, '#e07fa5'); ctx.fillStyle = 'rgba(255,255,255,.2)'; ctx.fillRect(-22, -50, 44, 3); const glow = 0.6 + Math.sin(state.levelT * 6) * 0.3; ctx.globalAlpha = glow; ctx.drawImage(SPR.goo, -20, -92, 40, 36); ctx.globalAlpha = 1; }
-    if (r > 0.5 && !w.melee) { ctx.globalAlpha = r; ctx.drawImage(w.glow ? SPR.pulse : SPR.goo, -14, -86, 28, 28); ctx.globalAlpha = 1; }
+    const pulseA = 0.55 + Math.sin(t * 5) * 0.25;
+    if (id === 'slap') { // a long, segmented bone tail that whips
+      ctx.rotate(-0.25 - r * 1.0);
+      for (let i = 0; i < 9; i++) { const k = i / 8, x = -4 - Math.sin(k * 2.2) * 12, y = 4 - k * 60, s2 = 9 - k * 4; ctx.fillStyle = boneGrad(x - s2, s2 * 2); ctx.beginPath(); ctx.ellipse(x, y, s2, s2 * 0.7, -0.3, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(x - s2 + 2, y + 2, s2 * 2 - 4, 1); }
+      ctx.fillStyle = METAL[3]; ctx.beginPath(); ctx.moveTo(-14, -58); ctx.lineTo(-24, -70); ctx.lineTo(-10, -62); ctx.fill();
+    } else if (id === 'vib') { // a chrome drill wrapped in ribs, humming violet
+      grip(); barrel(-10, -64, 20, 48, 9); for (let i = 0; i < 5; i++) rib(-12, -56 + i * 9 + (firing ? Math.sin(t * 60 + i) * 1.5 : 0), 24, 5);
+      glow(0, -64, 13, `rgba(180,90,255,${pulseA})`);
+    } else if (id === 'squirt') { // a slim vertebral pistol with a pale eye at the muzzle
+      grip(); barrel(-11, -54, 22, 40); spine(0, -54, 16, 34, 6); cable(10, -20, 22, -38, 8, -50, 2.5);
+      ctx.fillStyle = METAL[0]; ctx.beginPath(); ctx.ellipse(0, -56, 9, 5, 0, 0, 7); ctx.fill(); glow(0, -57, 8, `rgba(240,235,220,${pulseA})`);
+    } else if (id === 'spray') { // three bony throats fused to a metal spine
+      grip(); barrel(-14, -50, 28, 36);
+      for (const dx of [-11, 0, 11]) { ctx.fillStyle = boneGrad(dx - 5, 10); ctx.beginPath(); ctx.ellipse(dx, -56, 5, 9, dx * 0.02, 0, 7); ctx.fill(); ctx.fillStyle = METAL[0]; ctx.beginPath(); ctx.arc(dx, -62, 2.5, 0, 7); ctx.fill(); }
+      cable(-14, -24, -26, -40, -12, -52); cable(14, -24, 26, -40, 12, -52);
+    } else if (id === 'buster') { // twin ribbed barrels over a pair of armoured sacs
+      grip(); ctx.fillStyle = METAL[1]; ctx.beginPath(); ctx.ellipse(-11, -14, 12, 10, 0, 0, 7); ctx.ellipse(11, -14, 12, 10, 0, 0, 7); ctx.fill();
+      for (const dx of [-11, 11]) { ctx.strokeStyle = BONE[0]; ctx.lineWidth = 1; for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.arc(dx, -14, 6 + i * 3, 0.3, 2.8); ctx.stroke(); } }
+      for (const dx of [-11, 11]) { barrel(dx - 8, -66, 16, 50, 7); spine(dx, -66, 12, 44, 7); ctx.fillStyle = METAL[0]; ctx.beginPath(); ctx.ellipse(dx, -67, 6, 3, 0, 0, 7); ctx.fill(); }
+      cable(-20, -30, -30, -52, -18, -62); cable(20, -30, 30, -52, 18, -62);
+    } else if (id === 'gusher') { // a rotating cluster of bone barrels on a gunmetal hub
+      grip(); barrel(-15, -46, 30, 34, 10); cable(-15, -30, -28, -40, -16, -50); cable(15, -30, 28, -40, 16, -50);
+      ctx.save(); ctx.translate(0, -56); ctx.rotate(t * (firing ? 28 : 1.5));
+      for (let k = 0; k < 6; k++) { ctx.rotate(Math.PI / 3); ctx.fillStyle = boneGrad(-3, 6); ctx.fillRect(-3, -14, 6, 10); ctx.fillStyle = METAL[0]; ctx.fillRect(-1.5, -14, 3, 2); }
+      ctx.restore(); ctx.fillStyle = METAL[3]; ctx.beginPath(); ctx.arc(0, -56, 5, 0, 7); ctx.fill();
+    } else if (id === 'money') { // a heavy launcher: ribcage housing a glowing gold sac
+      grip(); barrel(-20, -62, 40, 50, 12);
+      for (let i = 0; i < 4; i++) { rib(-22, -54 + i * 10, 22, 7); ctx.save(); ctx.scale(-1, 1); rib(-22, -54 + i * 10, 22, 7); ctx.restore(); }
+      glow(0, -38, 14, `rgba(230,180,60,${pulseA})`); ctx.fillStyle = METAL[0]; ctx.beginPath(); ctx.ellipse(0, -64, 14, 6, 0, 0, 7); ctx.fill(); ctx.fillStyle = BONE[2]; ctx.beginPath(); ctx.ellipse(0, -64, 9, 3.5, 0, 0, 7); ctx.fill();
+    } else if (id === 'pulse') { // a sleek chrome emitter with glowing coils and a cyan core
+      grip(); barrel(-12, -60, 24, 46, 11);
+      for (let i = 0; i < 4; i++) { const yy = -54 + i * 10; ctx.fillStyle = `rgba(140,230,255,${0.35 + Math.sin(t * 10 - i) * 0.25})`; ctx.fillRect(-12, yy, 24, 3); }
+      cable(12, -22, 26, -34, 10, -56, 2.5); glow(0, -62, 12, `rgba(120,220,255,${pulseA})`);
+    } else if (id === 'finish') { // a towering biomechanical cannon: vertebral column, hoses, a seething white orb
+      grip(); barrel(-24, -70, 48, 58, 14); spine(0, -70, 34, 54, 8);
+      cable(-24, -20, -40, -50, -20, -68, 4); cable(24, -20, 40, -50, 20, -68, 4);
+      for (let i = 0; i < 3; i++) { rib(-28, -60 + i * 16, 18, 6); ctx.save(); ctx.scale(-1, 1); rib(-28, -60 + i * 16, 18, 6); ctx.restore(); }
+      glow(0, -78, 22 + Math.sin(t * 6) * 3, `rgba(255,250,240,${pulseA})`);
+    }
+    if (r > 0.5 && !w.melee) { ctx.globalAlpha = r; ctx.drawImage(w.glow ? SPR.pulse : SPR.goo, -14, -90, 28, 28); ctx.globalAlpha = 1; }
     ctx.restore();
   }
   function drawSplats() { // goo on the screen when you get hit
