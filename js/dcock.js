@@ -14,7 +14,8 @@
   function beep(f, d = 0.06, type = 'square', vol = 0.04, slide = 1) { try { if (sfx() && !sfx().on) return; actx = actx || new (window.AudioContext || window.webkitAudioContext)(); const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime; o.type = type; o.frequency.setValueAtTime(f, t); if (slide !== 1) o.frequency.exponentialRampToValueAtTime(f * slide, t + d); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + d); o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + d + 0.02); } catch (e) {} }
 
   // ---------- art ----------
-  const SRC = (typeof CUTOUTS !== 'undefined' && CUTOUTS.length) ? CUTOUTS : ['favicon.svg'];
+  // Octo Cock is the boss here, so it can't be picked as the hero (or end up in the cage)
+  const SRC = ((typeof CUTOUTS !== 'undefined' && CUTOUTS.length) ? CUTOUTS : ['favicon.svg']).filter(src => !/octo-cock/i.test(src));
   const SKINS = SRC.map(src => ({ src, name: src.split('/').pop().replace(/\.[a-z]+$/i, '').replace(/-/g, ' ').toUpperCase(), img: null }));
   const BOSS = { img: null, framed: false };      // Octo Cock: the cut-out if it exists, else the painting in a frame
   const loadImg = src => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
