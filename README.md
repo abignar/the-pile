@@ -89,3 +89,9 @@ Physics by [Planck.js](https://piqnt.com/planck.js/) (a JavaScript port of Box2D
 
 ## Donkey Cock (`js/dcock.js`)
 Barrel-dodging climber. Octo Cock throws rolling nut sacks down six sloped girders. Climb the ladders (broken ones can't be climbed), jump sacks (+100), grab a plunger to smash them (+300), and reach the cage before the bonus runs out. Each rescue starts a faster level. Octo Cock uses `images/octo-cock.webp` if that cut-out exists, otherwise the gallery painting in a frame. Loads only when its button is pressed.
+
+## Cockfight (`js/cockfight.js`)
+One-on-one arcade fighter. Pick any cut-out; each has balanced POWER / SPEED / TOUGH stats. Fight up a ladder against the rest of the pile, best of 3 rounds, 60s timer. The CPU gets sharper every fight.
+- Moves: SLAP (fast), THRUST (strong, long reach, knockback), JIZZ BALL (projectile; crouch or jump to dodge, two balls cancel), SUPER "Helicopter" spin (multi-hit, needs a full meter, which fills by landing and taking hits). Hold away from the opponent to block (chip damage only).
+- Keys: A/D move, W jump, S crouch, J slap, K thrust, L jizz ball, I super. Phones: d-pad + 4 buttons; sideways = full-screen with floating buttons.
+- Backdrop is the Cock Fight gallery painting. Loads only when its button is pressed.
