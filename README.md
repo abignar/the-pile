@@ -86,3 +86,6 @@ Physics by [Planck.js](https://piqnt.com/planck.js/) (a JavaScript port of Box2D
 - COOM (`js/coom.js`) and Cock Quest (`js/rpg.js`) only load when their buttons are pressed.
 - Cut-outs are decoded off the main thread and prepared one small step at a time.
 - Gallery images are WebP, about 1000px tall. The first one (`#g0` in `index.html`) is in the page so it shows instantly.
+
+## Donkey Cock (`js/dcock.js`)
+Barrel-dodging climber. Octo Cock throws rolling nut sacks down six sloped girders. Climb the ladders (broken ones can't be climbed), jump sacks (+100), grab a plunger to smash them (+300), and reach the cage before the bonus runs out. Each rescue starts a faster level. Octo Cock uses `images/octo-cock.webp` if that cut-out exists, otherwise the gallery painting in a frame. Loads only when its button is pressed.

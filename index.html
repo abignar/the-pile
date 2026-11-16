@@ -97,6 +97,7 @@
   <button id="snake" class="pile-only">Snake</button>
   <button id="quest" class="pile-only">Cock Quest</button>
   <button id="coomBtn" class="pile-only hot">COOM</button>
+  <button id="dkBtn" class="pile-only">Donkey Cock</button>
   <button id="back" class="game-only">Back to the pile</button>
   <button id="sound">Sound: on</button>
   <button id="clear" class="pile-only">Clear</button>
@@ -120,7 +121,8 @@
 const loadGame = (src, name) => window[name] ? Promise.resolve(window[name]) : new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = () => res(window[name]); s.onerror = rej; document.head.appendChild(s); });
 document.getElementById('quest').onclick = () => loadGame('js/rpg.js', 'CockQuest').then(g => g && g.open());
 document.getElementById('coomBtn').onclick = () => loadGame('js/coom.js', 'Coom').then(g => g && g.open());
-addEventListener('load', () => setTimeout(() => ['js/rpg.js', 'js/coom.js'].forEach(href => { const l = document.createElement('link'); l.rel = 'prefetch'; l.href = href; document.head.appendChild(l); }), 4000));
+document.getElementById('dkBtn').onclick = () => loadGame('js/dcock.js', 'DonkeyCock').then(g => g && g.open());
+addEventListener('load', () => setTimeout(() => ['js/rpg.js', 'js/coom.js', 'js/dcock.js'].forEach(href => { const l = document.createElement('link'); l.rel = 'prefetch'; l.href = href; document.head.appendChild(l); }), 4000));
 </script>
 </body>
 </html>
