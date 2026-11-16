@@ -508,7 +508,7 @@
   function lose() {
     const me = save.mon;
     say([{ t: `${me.name} fainted!`, fx: () => { snd.faint(); moan(0.5); } }, 'You blacked out!', '...and woke up back in the middle of the meadow.'], () => {
-      healMon(); me.atkS = me.defS = 0; save.x = C; save.y = C + 2; enterWorld(); battle = null;
+      window.CockStickers && window.CockStickers.gameOver(); healMon(); me.atkS = me.defS = 0; save.x = C; save.y = C + 2; enterWorld(); battle = null;
     });
   }
   function battleUpdate() {

@@ -483,7 +483,7 @@ const GALLERY = [
     game.over = true;
     document.getElementById('final').textContent = `You flicked ${game.score} cock${game.score === 1 ? '' : 's'} off the screen.`;
     overEl.classList.add('on');
-    sfx.moan(0.6);
+    sfx.moan(0.6); window.CockStickers && window.CockStickers.gameOver();
   }
   // paddle hits are queued during the physics step and applied straight after it
   world.on('begin-contact', contact => {
@@ -572,7 +572,7 @@ const GALLERY = [
   function spawnNext() {
     bk.cur = bk.next || newPiece(nextType()); bk.next = newPiece(nextType());
     bk.cur.x = 3; bk.cur.y = bk.cur.type === 'I' ? -1 : 0;
-    if (!fits(bk.cur)) { bk.over = true; document.getElementById('final').textContent = `You cleared ${bk.lines} line${bk.lines === 1 ? '' : 's'} — ${bk.score} points.`; overEl.classList.add('on'); sfx.moan(0.55); }
+    if (!fits(bk.cur)) { bk.over = true; document.getElementById('final').textContent = `You cleared ${bk.lines} line${bk.lines === 1 ? '' : 's'} — ${bk.score} points.`; overEl.classList.add('on'); sfx.moan(0.55); window.CockStickers && window.CockStickers.gameOver(); }
   }
   function hudBlocks() { hudScore.textContent = bk.score; hudLives.textContent = `Lines ${bk.lines}`; }
   function startBlocks() {
@@ -765,7 +765,7 @@ const GALLERY = [
     const eating = sn.food && nh.x === sn.food.x && nh.y === sn.food.y;
     const bodyToCheck = eating ? sn.body : sn.body.slice(0, -1);
     if (nh.x < 0 || nh.y < 0 || nh.x >= b.cols || nh.y >= b.rows || bodyToCheck.some(p => p.x === nh.x && p.y === nh.y)) {
-      sn.over = true;
+      sn.over = true; window.CockStickers && window.CockStickers.gameOver();
       document.getElementById('final').textContent = `Your Penisaurus grew ${sn.body.length - 2} ribs long and ate ${sn.eaten} cock${sn.eaten === 1 ? '' : 's'}.`;
       overEl.classList.add('on'); sfx.bump(1, 1.4); sfx.moan(0.55);
       return;
@@ -1385,6 +1385,7 @@ const GALLERY = [
 </script>
 <script src="js/rpg.js"></script>
 <script src="js/coom.js"></script>
+<script src="js/stickers.js"></script>
 <script>document.getElementById('quest').onclick = () => window.CockQuest && window.CockQuest.open();
 document.getElementById("coomBtn").onclick = () => window.Coom && window.Coom.open();</script>
 </body>

@@ -401,7 +401,7 @@
     if (state.hp <= 0) { state.hp = 0; die(); }
   }
   function die() {
-    state.scene = 'dead'; firing = false; if (document.pointerLockElement) document.exitPointerLock();
+    state.scene = 'dead'; firing = false; window.CockStickers && window.CockStickers.gameOver(); if (document.pointerLockElement) document.exitPointerLock();
     play('moan', 0.55);
     setTimeout(() => {
       root.querySelector('#coomFinal').innerHTML = `SCORE ${state.score}<br>LEVEL ${state.level} &middot; ${state.kills} KILLS`;
