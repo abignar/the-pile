@@ -10,6 +10,7 @@ const CUTOUTS = [
   "images/penisaurus-rex.webp",
   "images/beverly-hills-cock.webp",
   "images/cock-fight.webp",
+  "images/octo-cock.webp",
 ];
 
 // Background gallery: one continuous reel scrolling left to right, in random order.
