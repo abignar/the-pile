@@ -44,7 +44,15 @@ async function scores(request, env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (url.pathname === '/api/scores') return scores(request, env);
-    return env.ASSETS.fetch(request);
+    // Always use the secure address: send http:// visitors to https://
+    if (url.protocol === 'http:' && !['localhost', '127.0.0.1'].includes(url.hostname)) {
+      url.protocol = 'https:';
+      return Response.redirect(url.toString(), 301);
+    }
+    const res = url.pathname === '/api/scores' ? await scores(request, env) : await env.ASSETS.fetch(request);
+    // Tell browsers to only ever use https for this site from now on
+    const out = new Response(res.body, res);
+    out.headers.set('Strict-Transport-Security', 'max-age=31536000');
+    return out;
   },
 };
