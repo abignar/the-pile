@@ -75,11 +75,3 @@ Workers & Pages → Create → Connect to Git → this repo. Framework preset **
 
 Physics by [Planck.js](https://piqnt.com/planck.js/) (a JavaScript port of Box2D, MIT licence — `js/planck-LICENSE.txt`). Drawing uses WebGL, with a plain canvas fallback.
 
-## Schlong Way Home (`js/escape.js`)
-A side-scrolling puzzle-platformer: escape the sausage factory and lead the captive cocks out.
-- **HEY** calls nearby cocks to follow your exact path; **WAIT** parks them somewhere safe.
-- **SNEAK** (hold) makes you slow, low and invisible inside dark zones. Grinder-bots have a visible vision cone, shout "!" and then fire.
-- **MOAN** (2s cooldown) stuns nearby bots and opens escape portals; followers who reach an open portal or the EXIT are rescued.
-- Hazards: gaps, grinder pits, spikes, moving saws, levers that open doors, checkpoints.
-- 4 levels are built in `LEVELS` with tiny commands (`ground`, `gap`, `grinder`, `plat`, `shadow`, `guard`, `cock`, `portal`...). Add a new `build(width, 'NAME', L => {...})` to add a level.
-- Keys: arrows/A-D move, W/Space jump, S/Down sneak, 1 HEY, 2 WAIT, 3/M MOAN. Touch buttons appear on phones (play sideways). Progress is saved for CONTINUE.
