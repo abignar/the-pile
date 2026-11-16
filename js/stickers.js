@@ -13,7 +13,7 @@
   ];
   const LINES = {
     leave: ['Leaving already?', 'Take a cock home with you.'],
-    gameover: ['Game over, champ.', 'Console yourself with a sticker.'],
+    back: ['Welcome back, champ.', 'Take a cock home with you.'],
     button: ['Cock stickers!', 'Slap one on your laptop, fridge or nan.'],
   };
   const GAME_COOLDOWN = 3 * 60 * 1000;
@@ -84,11 +84,18 @@
   }
 
   // Games call this when they end.
-  let lastGame = 0;
-  function gameOver() {
-    if (Date.now() - lastGame < GAME_COOLDOWN) return;
-    lastGame = Date.now();
-    setTimeout(() => { if (!pop.classList.contains('on')) show('gameover'); }, 1600);
-  }
+  // After playing a game, the pop-up shows when you come back to the main page
+  // (not on the game-over screen), at most every 3 minutes.
+  let lastBack = 0, wasIn = false, playedSince = 0;
+  const inGame = () => document.body.classList.contains('game') || !!window.__rpgOpen;
+  function gameOver() { playedSince = Date.now(); } // games still call this; it just notes that a game was played
+  setInterval(() => {
+    const now = inGame();
+    if (now && !wasIn) playedSince = Date.now();
+    if (!now && wasIn && playedSince && Date.now() - lastBack > GAME_COOLDOWN && !pop.classList.contains('on')) {
+      lastBack = Date.now(); playedSince = 0; setTimeout(() => { if (!inGame()) show('back'); }, 700);
+    }
+    wasIn = now;
+  }, 300);
   window.CockStickers = { show, gameOver, STICKERS, SHOP };
 })();

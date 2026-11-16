@@ -78,7 +78,7 @@ Physics by [Planck.js](https://piqnt.com/planck.js/) (a JavaScript port of Box2D
 
 ## Sticker shop (`js/stickers.js`)
 - A wiggling **STICKERS!** button (top-left) opens a pop-up with each sticker linking to Redbubble, plus a link to the whole shop.
-- The pop-up also appears when someone is about to leave (desktop: mouse heads for the tabs; phones: once after ~75s), at most once per visit, and after a game ends (at most every 3 minutes).
+- The pop-up also appears when someone is about to leave (desktop: mouse heads for the tabs; phones: once after ~75s), at most once per visit, and when someone comes back to the main page after playing a game (at most every 3 minutes). It never covers a game-over screen.
 - To add a sticker: put an image in `images/` and add `{ name, note, img, url }` to `STICKERS` at the top of `js/stickers.js`.
 
 ## Speed notes
