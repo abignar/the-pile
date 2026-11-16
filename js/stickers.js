@@ -19,15 +19,6 @@
   const GAME_COOLDOWN = 3 * 60 * 1000;
 
   const css = `
-  #stkBtn{position:fixed;left:12px;top:calc(12px + env(safe-area-inset-top));z-index:3;font:400 17px "Bagel Fat One",system-ui;color:#fff;
-    background:#c2185b;border:3px solid #2a1520;border-radius:14px;padding:9px 14px 8px;box-shadow:4px 4px 0 #2a1520;cursor:pointer;
-    transform:rotate(-6deg);animation:stkWiggle 5s ease-in-out infinite;text-decoration:none;display:flex;align-items:center;gap:7px;letter-spacing:.3px}
-  #stkBtn:hover{animation-play-state:paused;transform:rotate(-2deg) scale(1.08)}
-  #stkBtn:active{transform:rotate(-2deg) translate(2px,2px);box-shadow:1px 1px 0 #2a1520}
-  #stkBtn img{width:30px;height:30px;object-fit:contain;filter:drop-shadow(0 2px 0 rgba(0,0,0,.35))}
-  #stkBtn::after{content:"";position:absolute;right:-3px;top:-3px;width:16px;height:16px;background:linear-gradient(225deg,#ffe3ee 0 50%,transparent 50%);border-radius:0 11px 0 0}
-  @keyframes stkWiggle{0%,82%,100%{transform:rotate(-6deg) scale(1)}85%{transform:rotate(4deg) scale(1.12)}88%{transform:rotate(-12deg) scale(1.12)}91%{transform:rotate(3deg) scale(1.08)}94%{transform:rotate(-8deg) scale(1.02)}}
-  body.game #stkBtn{opacity:.55;transform:rotate(-6deg) scale(.85);animation:none}
   #stk{position:fixed;inset:0;z-index:40;display:none;align-items:center;justify-content:center;background:rgba(20,8,14,.62);padding:16px;backdrop-filter:blur(3px)}
   #stk.on{display:flex}
   #stk .box{position:relative;background:#fff6f9;border:3px solid #2a1520;border-radius:22px;box-shadow:8px 8px 0 #2a1520;max-width:560px;width:100%;
@@ -45,15 +36,14 @@
   #stk .all{display:inline-block;margin-top:14px;font-weight:800;color:#2a1520}
   #stk .x{position:absolute;top:8px;right:8px;width:36px;height:36px;border-radius:50%;border:2px solid #2a1520;background:#fff;font:700 17px system-ui;cursor:pointer}
   #stk .later{display:block;margin:10px auto 0;background:none;border:none;font:600 13px "DM Sans",system-ui;color:#2a1520;opacity:.6;cursor:pointer;text-decoration:underline}
-  @media (max-width:420px){#stk .grid{gap:8px}#stk a.card b{font-size:15px}#stkBtn{font-size:15px;padding:7px 11px 6px}#stkBtn img{width:24px;height:24px}}
+  @media (max-width:420px){#stk .grid{gap:8px}#stk a.card b{font-size:15px}}
   `;
   const style = document.createElement('style'); style.textContent = css; document.head.appendChild(style);
 
-  const btn = document.createElement('a');
-  btn.id = 'stkBtn'; btn.href = SHOP; btn.target = '_blank'; btn.rel = 'noopener';
-  btn.innerHTML = `<img src="${STICKERS[0].img}" alt="">STICKERS!`;
+  // the button itself is in index.html (so it shows instantly); this just makes it open the pop-up
+  let btn = document.getElementById('stkBtn');
+  if (!btn) { btn = document.createElement('a'); btn.id = 'stkBtn'; btn.href = SHOP; btn.target = '_blank'; btn.rel = 'noopener'; btn.innerHTML = '<img src="images/stk-icon.webp" alt="" width="30" height="30">STICKERS!'; document.body.appendChild(btn); }
   btn.addEventListener('click', e => { e.preventDefault(); show('button'); });
-  document.body.appendChild(btn);
 
   const pop = document.createElement('div'); pop.id = 'stk';
   pop.innerHTML = `<div class="box" role="dialog" aria-modal="true" aria-labelledby="stkTitle"><button class="x" aria-label="Close">✕</button>

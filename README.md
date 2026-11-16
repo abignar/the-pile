@@ -42,7 +42,7 @@ To take one out of the pile, delete its line from `CUTOUTS`.
 
 1. Export JPG, about **1600px** on the longest side, quality ~78 (100–200 KB).
 2. Put it in `images/gallery/`.
-3. In `index.html`, find `const GALLERY` and add a line: `"images/gallery/new-one.jpg",`
+3. In `index.html`, find `const GALLERY` and add a line: `"images/gallery/new-one.webp",`
 4. Change the reel speed with `GALLERY_SECONDS` (roughly how long each image takes to pass).
 
 ## Tweaking the feel
@@ -80,3 +80,9 @@ Physics by [Planck.js](https://piqnt.com/planck.js/) (a JavaScript port of Box2D
 - A wiggling **STICKERS!** button (top-left) opens a pop-up with each sticker linking to Redbubble, plus a link to the whole shop.
 - The pop-up also appears when someone is about to leave (desktop: mouse heads for the tabs; phones: once after ~75s), at most once per visit, and after a game ends (at most every 3 minutes).
 - To add a sticker: put an image in `images/` and add `{ name, note, img, url }` to `STICKERS` at the top of `js/stickers.js`.
+
+## Speed notes
+- The pile's code lives in `js/main.js`; every script loads with `defer`, and the fonts load without blocking the first paint.
+- COOM (`js/coom.js`) and Cock Quest (`js/rpg.js`) only load when their buttons are pressed.
+- Cut-outs are decoded off the main thread and prepared one small step at a time.
+- Gallery images are WebP, about 1000px tall. The first one (`#g0` in `index.html`) is in the page so it shows instantly.
